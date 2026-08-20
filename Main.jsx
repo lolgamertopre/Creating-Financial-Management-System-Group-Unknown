@@ -12,12 +12,12 @@ const STORAGE_KEY = "my-money-data";
 // line:  #4A5D52  (hairline divider, chalk-dust)
 
 const CATEGORIES = [
-    { id: "food", name: "Grocery", emoji: "🛒", color: "#E8A93B" },
-    { id: "electricity", name: "Electricity", emoji: "⚡", color: "#E8A93B" },
-    { id: "water", name: "Water", emoji: "💧", color: "#6C93B0" },
-    { id: "transportation", name: "Transportation", emoji: "🚌", color: "#6C93B0" },
-    { id: "health", name: "Health", emoji: "❤️", color: "#E85C4A" },
-    { id: "home", name: "Home", emoji: "🏠", color: "#6C93B0" },
+    { id: "food", name: "Grocery Expenses", emoji: "🛒", color: "#E8A93B" },
+    { id: "electricity", name: "Electricity Expenses", emoji: "⚡", color: "#E8A93B" },
+    { id: "water", name: "Water Expenses", emoji: "💧", color: "#6C93B0" },
+    { id: "transportation", name: "Transportation Expenses", emoji: "🚌", color: "#6C93B0" },
+    { id: "health", name: "Health Expenses", emoji: "❤️", color: "#E85C4A" },
+    { id: "home", name: "house Expenses", emoji: "🏠", color: "#6C93B0" },
 ];
 
 function Keypad({ onConfirm, onCancel, accentColor, icon, title }) {
@@ -103,17 +103,13 @@ function Keypad({ onConfirm, onCancel, accentColor, icon, title }) {
 
 const DEFAULT_DATA = {
     balance: 0,
-    monthLimit: 300,
-    spentThisMonth: 0,
     entries: [],
 };
 
 export default function BudgetApp() {
     const [balance, setBalance] = useState(DEFAULT_DATA.balance);
-    const [monthLimit, setMonthLimit] = useState(DEFAULT_DATA.monthLimit);
-    const [spentThisMonth, setSpentThisMonth] = useState(DEFAULT_DATA.spentThisMonth);
     const [entries, setEntries] = useState(DEFAULT_DATA.entries);
-    const [pad, setPad] = useState(null); // { emoji, color, kind }
+    const [pad, setPad] = useState(null); // { emoji, color, kind, name }
     const [loading, setLoading] = useState(true);
     const [saveError, setSaveError] = useState(false);
 
@@ -124,8 +120,6 @@ export default function BudgetApp() {
                 if (result && result.value) {
                     const data = JSON.parse(result.value);
                     setBalance(data.balance ?? DEFAULT_DATA.balance);
-                    setMonthLimit(data.monthLimit ?? DEFAULT_DATA.monthLimit);
-                    setSpentThisMonth(data.spentThisMonth ?? DEFAULT_DATA.spentThisMonth);
                     setEntries(data.entries ?? DEFAULT_DATA.entries);
                 }
             } catch {
@@ -145,9 +139,6 @@ export default function BudgetApp() {
         }
     };
 
-    const pct = Math.min(100, Math.round((spentThisMonth / monthLimit) * 100));
-    const isWarning = pct >= 80;
-
     const openCategory = (cat) => setPad({ emoji: cat.emoji, color: cat.color, kind: "out", name: cat.name });
     const openIncome = () => setPad({ emoji: "💵", color: "#E8A93B", kind: "in", name: "Income" });
 
@@ -155,14 +146,12 @@ export default function BudgetApp() {
         const id = Date.now();
         const nextEntries = [{ id, emoji: pad.emoji, amount, kind: pad.kind }, ...entries].slice(0, 12);
         const nextBalance = pad.kind === "in" ? balance + amount : balance - amount;
-        const nextSpent = pad.kind === "in" ? spentThisMonth : spentThisMonth + amount;
 
         setBalance(nextBalance);
-        setSpentThisMonth(nextSpent);
         setEntries(nextEntries);
         setPad(null);
 
-        persist({ balance: nextBalance, monthLimit, spentThisMonth: nextSpent, entries: nextEntries });
+        persist({ balance: nextBalance, entries: nextEntries });
     };
 
     const removeEntry = (id) => {
@@ -170,14 +159,12 @@ export default function BudgetApp() {
         if (!entry) return;
 
         const nextBalance = entry.kind === "in" ? balance - entry.amount : balance + entry.amount;
-        const nextSpent = entry.kind === "in" ? spentThisMonth : Math.max(0, spentThisMonth - entry.amount);
         const nextEntries = entries.filter((x) => x.id !== id);
 
         setBalance(nextBalance);
-        setSpentThisMonth(nextSpent);
         setEntries(nextEntries);
 
-        persist({ balance: nextBalance, monthLimit, spentThisMonth: nextSpent, entries: nextEntries });
+        persist({ balance: nextBalance, entries: nextEntries });
     };
 
     if (loading) {
@@ -212,7 +199,7 @@ export default function BudgetApp() {
 
                 {/* Balance card */}
                 <div
-                    className="rounded-3xl p-6 mb-4 relative overflow-hidden"
+                    className="rounded-3xl p-6 mb-6 relative overflow-hidden"
                     style={{ background: "#34473D", border: "1px solid #4A5D52" }}
                 >
                     <div className="text-center">
@@ -225,37 +212,6 @@ export default function BudgetApp() {
                         <div className="flex items-center justify-center gap-2 mt-2">
                             <span className="text-xl">💰</span>
                         </div>
-                    </div>
-                </div>
-
-                {/* Monthly warning bar */}
-                <div
-                    className="rounded-2xl p-4 mb-6"
-                    style={{
-                        background: isWarning ? "#E85C4A22" : "#34473D",
-                        border: `1px solid ${isWarning ? "#E85C4A" : "#4A5D52"}`,
-                    }}
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-2xl">{isWarning ? "🔴" : "🟢"}</span>
-                        <span
-                            className="text-sm font-semibold tabular-nums"
-                            style={{ color: "#F5F1E6" }}
-                        >
-                            ${spentThisMonth.toFixed(0)} / ${monthLimit}
-                        </span>
-                    </div>
-                    <div
-                        className="h-4 rounded-full overflow-hidden"
-                        style={{ background: "#2B3A32" }}
-                    >
-                        <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                                width: `${pct}%`,
-                                background: isWarning ? "#E85C4A" : "#E8A93B",
-                            }}
-                        />
                     </div>
                 </div>
 
