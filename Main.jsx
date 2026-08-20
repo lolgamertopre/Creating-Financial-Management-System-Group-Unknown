@@ -12,15 +12,15 @@ const STORAGE_KEY = "my-money-data";
 // line:  #4A5D52  (hairline divider, chalk-dust)
 
 const CATEGORIES = [
-    { id: "food", emoji: "🛒", color: "#E8A93B" },
-    { id: "power", emoji: "⚡", color: "#E8A93B" },
-    { id: "water", emoji: "💧", color: "#6C93B0" },
-    { id: "bus", emoji: "🚌", color: "#6C93B0" },
-    { id: "health", emoji: "❤️", color: "#E85C4A" },
-    { id: "home", emoji: "🏠", color: "#6C93B0" },
+    { id: "food", name: "Grocery", emoji: "🛒", color: "#E8A93B" },
+    { id: "power", name: "Power", emoji: "⚡", color: "#E8A93B" },
+    { id: "water", name: "Water", emoji: "💧", color: "#6C93B0" },
+    { id: "bus", name: "Bus", emoji: "🚌", color: "#6C93B0" },
+    { id: "health", name: "Health", emoji: "❤️", color: "#E85C4A" },
+    { id: "home", name: "Home", emoji: "🏠", color: "#6C93B0" },
 ];
 
-function Keypad({ onConfirm, onCancel, accentColor, icon }) {
+function Keypad({ onConfirm, onCancel, accentColor, icon, title }) {
     const [value, setValue] = useState("");
 
     const press = (d) => {
@@ -46,11 +46,16 @@ function Keypad({ onConfirm, onCancel, accentColor, icon }) {
             >
                 <div className="flex flex-col items-center mb-6">
                     <div
-                        className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-3"
+                        className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-1"
                         style={{ background: accentColor + "33", border: `3px solid ${accentColor}` }}
                     >
                         {icon}
                     </div>
+                    {title && (
+                        <div className="text-xs font-semibold tracking-wide mb-2 opacity-80" style={{ color: "#F5F1E6" }}>
+                            {title}
+                        </div>
+                    )}
                     <div
                         className="text-5xl font-bold tabular-nums"
                         style={{ color: "#F5F1E6", fontFamily: "ui-rounded, system-ui, sans-serif" }}
@@ -143,8 +148,8 @@ export default function BudgetApp() {
     const pct = Math.min(100, Math.round((spentThisMonth / monthLimit) * 100));
     const isWarning = pct >= 80;
 
-    const openCategory = (cat) => setPad({ emoji: cat.emoji, color: cat.color, kind: "out" });
-    const openIncome = () => setPad({ emoji: "💵", color: "#E8A93B", kind: "in" });
+    const openCategory = (cat) => setPad({ emoji: cat.emoji, color: cat.color, kind: "out", name: cat.name });
+    const openIncome = () => setPad({ emoji: "💵", color: "#E8A93B", kind: "in", name: "Income" });
 
     const confirm = (amount) => {
         const id = Date.now();
@@ -260,10 +265,16 @@ export default function BudgetApp() {
                         <button
                             key={cat.id}
                             onClick={() => openCategory(cat)}
-                            className="aspect-square rounded-2xl flex items-center justify-center text-4xl active:scale-95 transition"
+                            className="aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 active:scale-95 transition"
                             style={{ background: "#34473D", border: `2px solid ${cat.color}55` }}
                         >
-                            {cat.emoji}
+                            <span className="text-3xl">{cat.emoji}</span>
+                            <span
+                                className="text-xs font-semibold tracking-wide"
+                                style={{ color: "#F5F1E6" }}
+                            >
+                                {cat.name}
+                            </span>
                         </button>
                     ))}
                 </div>
@@ -332,6 +343,7 @@ export default function BudgetApp() {
                 {pad && (
                     <Keypad
                         icon={pad.emoji}
+                        title={pad.name}
                         accentColor={pad.color}
                         onConfirm={confirm}
                         onCancel={() => setPad(null)}
