@@ -1,7 +1,19 @@
 import { useState, useEffect } from "react";
-
-const STORAGE_KEY = "my-money-data";
-const SERVER_AUDIT_KEY = "server-audit-ledger";
+import {
+    getActiveTransactions,
+    getDeletedTransactions,
+    saveTransaction,
+    softDeleteTransaction,
+    restoreDeletedTransaction,
+    purgeDeletedTransaction,
+    clearAllDeletedFromDB,
+    getAuditLogs,
+    calculateBalanceFromDB,
+    syncPendingData,
+    getMeta,
+    setMeta,
+    db,
+} from "./db.js";
 
 // --- Design tokens (chalkboard ledger theme) ---
 // bg:    #2B3A32  (deep chalkboard green)
@@ -117,20 +129,19 @@ function Keypad({ onConfirm, onCancel, accentColor, icon, title }) {
     );
 }
 
-const DEFAULT_DATA = {
-    balance: 0,
-    entries: [],
-    deletedHistory: [],
-};
-
 export default function BudgetApp() {
-    const [balance, setBalance] = useState(DEFAULT_DATA.balance);
-    const [entries, setEntries] = useState(DEFAULT_DATA.entries);
-    const [deletedHistory, setDeletedHistory] = useState(DEFAULT_DATA.deletedHistory);
+    const [balance, setBalance] = useState(0);
+    const [entries, setEntries] = useState([]);
+    const [deletedHistory, setDeletedHistory] = useState([]);
     const [serverLogs, setServerLogs] = useState([]);
     const [pad, setPad] = useState(null); // { emoji, color, kind, name }
     const [loading, setLoading] = useState(true);
-    const [saveError, setSaveError] = useState(false);
+
+    // Online & PWA Sync states
+    const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncMessage, setSyncMessage] = useState("");
+    const [installPrompt, setInstallPrompt] = useState(null);
 
     // Modal states
     const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -139,65 +150,131 @@ export default function BudgetApp() {
     const [adminPin, setAdminPin] = useState("");
     const [pinError, setPinError] = useState(false);
 
-    useEffect(() => {
-        (async () => {
-            try {
-                // 1. Load client-facing data
-                const result = await window.storage?.get?.(STORAGE_KEY, false);
-                if (result && result.value) {
-                    const data = JSON.parse(result.value);
-                    setBalance(data.balance ?? DEFAULT_DATA.balance);
-                    setEntries(data.entries ?? DEFAULT_DATA.entries);
-                    setDeletedHistory(data.deletedHistory ?? DEFAULT_DATA.deletedHistory);
-                }
-                // 2. Load permanent server audit ledger
-                const auditResult = await window.storage?.get?.(SERVER_AUDIT_KEY, false);
-                if (auditResult && auditResult.value) {
-                    setServerLogs(JSON.parse(auditResult.value));
-                }
-            } catch {
-                // no saved data yet, start fresh
-            } finally {
-                setLoading(false);
-            }
-        })();
-    }, []);
-
-    const persistClient = async (next) => {
+    // Load data from Dexie DB on startup (with migration from legacy storage)
+    const refreshDataFromDB = async () => {
         try {
-            setSaveError(false);
-            await window.storage?.set?.(STORAGE_KEY, JSON.stringify(next), false);
-        } catch {
-            setSaveError(true);
+            const active = await getActiveTransactions();
+            const deleted = await getDeletedTransactions();
+            const logs = await getAuditLogs();
+            const calculatedBalance = await calculateBalanceFromDB();
+
+            // Migration check: If Dexie is completely empty, check legacy storage
+            if (active.length === 0 && deleted.length === 0) {
+                const legacy = localStorage.getItem("my-money-data");
+                if (legacy) {
+                    try {
+                        const parsed = JSON.parse(legacy);
+                        if (parsed.entries && parsed.entries.length > 0) {
+                            for (const entry of parsed.entries) {
+                                await db.transactions.put({ ...entry, isDeleted: 0, syncStatus: "pending" });
+                            }
+                        }
+                        if (parsed.deletedHistory && parsed.deletedHistory.length > 0) {
+                            for (const entry of parsed.deletedHistory) {
+                                await db.transactions.put({ ...entry, isDeleted: 1, syncStatus: "pending" });
+                            }
+                        }
+                        // Refresh after migration
+                        const migratedActive = await getActiveTransactions();
+                        const migratedDeleted = await getDeletedTransactions();
+                        const migratedBal = await calculateBalanceFromDB();
+                        setEntries(migratedActive);
+                        setDeletedHistory(migratedDeleted);
+                        setBalance(migratedBal);
+                        setServerLogs(await getAuditLogs());
+                        return;
+                    } catch (e) {
+                        console.error("Migration error:", e);
+                    }
+                }
+            }
+
+            setEntries(active);
+            setDeletedHistory(deleted);
+            setBalance(calculatedBalance);
+            setServerLogs(logs);
+        } catch (err) {
+            console.error("DB Load Error:", err);
         }
     };
 
-    const recordServerAudit = async (action, details) => {
-        try {
-            let existingLogs = [];
-            const result = await window.storage?.get?.(SERVER_AUDIT_KEY, false);
-            if (result && result.value) {
-                existingLogs = JSON.parse(result.value);
+    useEffect(() => {
+        (async () => {
+            await refreshDataFromDB();
+            setLoading(false);
+        })();
+
+        // Network status event listeners
+        const handleOnline = async () => {
+            setIsOnline(true);
+            setSyncMessage("Back Online! Syncing pending data...");
+            setIsSyncing(true);
+            const result = await syncPendingData();
+            setIsSyncing(false);
+            if (result.success) {
+                setSyncMessage("All offline changes synced!");
+                setTimeout(() => setSyncMessage(""), 3500);
             }
-            const logEntry = {
-                logId: "SRV-" + Date.now().toString(36).toUpperCase() + "-" + Math.floor(Math.random() * 1000),
-                action,
-                details,
-                timestamp: new Date().toISOString(),
-            };
-            const updated = [logEntry, ...existingLogs];
-            await window.storage?.set?.(SERVER_AUDIT_KEY, JSON.stringify(updated), false);
-            setServerLogs(updated);
-        } catch (err) {
-            console.error("Server audit write error:", err);
+            await refreshDataFromDB();
+        };
+
+        const handleOffline = () => {
+            setIsOnline(false);
+            setSyncMessage("Offline Mode: changes saved locally in Dexie DB");
+        };
+
+        const handleSyncCompleted = async () => {
+            await refreshDataFromDB();
+        };
+
+        const handleBeforeInstallPrompt = (e) => {
+            e.preventDefault();
+            setInstallPrompt(e);
+        };
+
+        window.addEventListener("online", handleOnline);
+        window.addEventListener("offline", handleOffline);
+        window.addEventListener("sync-completed", handleSyncCompleted);
+        window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+
+        return () => {
+            window.removeEventListener("online", handleOnline);
+            window.removeEventListener("offline", handleOffline);
+            window.removeEventListener("sync-completed", handleSyncCompleted);
+            window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+        };
+    }, []);
+
+    const handleManualSync = async () => {
+        setIsSyncing(true);
+        setSyncMessage("Syncing with server...");
+        const result = await syncPendingData();
+        setIsSyncing(false);
+        if (result.success) {
+            setSyncMessage("Synced successfully!");
+        } else if (result.reason === "offline") {
+            setSyncMessage("Cannot sync while offline.");
+        } else {
+            setSyncMessage("Pending changes stored securely in Dexie.");
+        }
+        setTimeout(() => setSyncMessage(""), 3500);
+        await refreshDataFromDB();
+    };
+
+    const handleInstallApp = async () => {
+        if (!installPrompt) return;
+        installPrompt.prompt();
+        const { outcome } = await installPrompt.userChoice;
+        if (outcome === "accepted") {
+            setInstallPrompt(null);
         }
     };
 
     const openCategory = (cat) => setPad({ emoji: cat.emoji, color: cat.color, kind: "out", name: cat.name });
     const openIncome = () => setPad({ emoji: "💵", color: "#E8A93B", kind: "in", name: "Income" });
 
-    // Client creates a transaction
-    const confirm = (amount) => {
+    // Client creates a transaction (persisted to Dexie DB with offline sync queue)
+    const confirm = async (amount) => {
         const id = Date.now();
         const newEntry = {
             id,
@@ -208,72 +285,33 @@ export default function BudgetApp() {
             date: new Date().toISOString(),
         };
 
-        const nextEntries = [newEntry, ...entries];
-        const nextBalance = pad.kind === "in" ? balance + amount : balance - amount;
-
-        setBalance(nextBalance);
-        setEntries(nextEntries);
+        await saveTransaction(newEntry);
         setPad(null);
-
-        persistClient({ balance: nextBalance, entries: nextEntries, deletedHistory });
-        recordServerAudit("TRANSACTION_CREATED", newEntry);
+        await refreshDataFromDB();
     };
 
-    // Client deletes an active transaction
-    const removeEntry = (id) => {
-        const entry = entries.find((e) => e.id === id);
-        if (!entry) return;
-
-        const nextBalance = entry.kind === "in" ? balance - entry.amount : balance + entry.amount;
-        const nextEntries = entries.filter((x) => x.id !== id);
-        const deletedItem = {
-            ...entry,
-            deletedAt: new Date().toISOString(),
-        };
-        const nextDeletedHistory = [deletedItem, ...deletedHistory];
-
-        setBalance(nextBalance);
-        setEntries(nextEntries);
-        setDeletedHistory(nextDeletedHistory);
-
-        persistClient({ balance: nextBalance, entries: nextEntries, deletedHistory: nextDeletedHistory });
-        recordServerAudit("TRANSACTION_DELETED_BY_CLIENT", deletedItem);
+    // Client deletes an active transaction (soft delete in Dexie)
+    const removeEntry = async (id) => {
+        await softDeleteTransaction(id);
+        await refreshDataFromDB();
     };
 
     // Client permanently deletes an entry from her own deleted history view
-    const purgeClientHistoryItem = (id) => {
-        const item = deletedHistory.find((x) => x.id === id);
-        const nextDeletedHistory = deletedHistory.filter((x) => x.id !== id);
-
-        setDeletedHistory(nextDeletedHistory);
-        persistClient({ balance, entries, deletedHistory: nextDeletedHistory });
-        recordServerAudit("CLIENT_PURGED_HISTORY_RECORD", { purgedRecord: item });
+    const purgeClientHistoryItem = async (id) => {
+        await purgeDeletedTransaction(id);
+        await refreshDataFromDB();
     };
 
-    // Client clears all her deleted history view
-    const clearAllClientHistory = () => {
-        const count = deletedHistory.length;
-        setDeletedHistory([]);
-        persistClient({ balance, entries, deletedHistory: [] });
-        recordServerAudit("CLIENT_CLEARED_ALL_HISTORY", { clearedCount: count });
+    // Client clears all her deleted history view from Dexie
+    const clearAllClientHistory = async () => {
+        await clearAllDeletedFromDB();
+        await refreshDataFromDB();
     };
 
     // Client restores a deleted transaction
-    const restoreEntry = (id) => {
-        const item = deletedHistory.find((x) => x.id === id);
-        if (!item) return;
-
-        const { deletedAt, ...restoredEntry } = item;
-        const nextEntries = [restoredEntry, ...entries];
-        const nextDeletedHistory = deletedHistory.filter((x) => x.id !== id);
-        const nextBalance = item.kind === "in" ? balance + item.amount : balance - item.amount;
-
-        setBalance(nextBalance);
-        setEntries(nextEntries);
-        setDeletedHistory(nextDeletedHistory);
-
-        persistClient({ balance: nextBalance, entries: nextEntries, deletedHistory: nextDeletedHistory });
-        recordServerAudit("TRANSACTION_RESTORED_BY_CLIENT", item);
+    const restoreEntry = async (id) => {
+        await restoreDeletedTransaction(id);
+        await refreshDataFromDB();
     };
 
     const handleUnlockAdmin = () => {
@@ -303,21 +341,63 @@ export default function BudgetApp() {
             className="min-h-screen w-full flex justify-center"
             style={{ background: "#2B3A32", fontFamily: "system-ui, sans-serif" }}
         >
-            <div className="w-full max-w-sm px-4 pt-6 pb-28 relative">
-                {/* App name */}
-                <div className="flex items-center justify-center gap-2 mb-5">
-                    <span className="text-3xl">💰</span>
-                    <span
-                        className="text-2xl font-bold tracking-wide"
-                        style={{ color: "#F5F1E6", fontFamily: "ui-rounded, system-ui, sans-serif" }}
-                    >
-                        My Money
-                    </span>
+            <div className="w-full max-w-sm px-4 pt-5 pb-24 relative">
+                {/* Header: App Name & PWA Status */}
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                        <span className="text-3xl">💰</span>
+                        <span
+                            className="text-2xl font-bold tracking-wide"
+                            style={{ color: "#F5F1E6", fontFamily: "ui-rounded, system-ui, sans-serif" }}
+                        >
+                            My Money
+                        </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        {/* PWA Install Button */}
+                        {installPrompt && (
+                            <button
+                                onClick={handleInstallApp}
+                                className="px-2.5 py-1 rounded-full text-xs font-bold transition active:scale-95 shadow-md flex items-center gap-1"
+                                style={{ background: "#E8A93B", color: "#2B3A32" }}
+                                title="Install App to Homescreen"
+                            >
+                                <span>📲</span>
+                                <span>Install</span>
+                            </button>
+                        )}
+
+                        {/* Online / Offline Sync Pill */}
+                        <button
+                            onClick={handleManualSync}
+                            className="px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1.5 transition active:scale-95"
+                            style={{
+                                background: isOnline ? "#34473D" : "#E85C4A22",
+                                border: `1px solid ${isOnline ? "#4A5D52" : "#E85C4A"}`,
+                                color: "#F5F1E6",
+                            }}
+                            title="Click to sync data with backend"
+                        >
+                            <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-400" : "bg-amber-400"} ${isSyncing ? "animate-ping" : ""}`} />
+                            <span>{isSyncing ? "Syncing..." : isOnline ? "Online" : "Offline (Dexie)"}</span>
+                        </button>
+                    </div>
                 </div>
+
+                {/* Sync Notification Banner */}
+                {syncMessage && (
+                    <div
+                        className="mb-4 rounded-xl px-3 py-2 text-center text-xs font-semibold animate-fade-in"
+                        style={{ background: "#34473D", border: "1px solid #E8A93B", color: "#F5F1E6" }}
+                    >
+                        {syncMessage}
+                    </div>
+                )}
 
                 {/* Balance card */}
                 <div
-                    className="rounded-3xl p-6 mb-4 relative overflow-hidden"
+                    className="rounded-3xl p-6 mb-4 relative overflow-hidden shadow-lg"
                     style={{ background: "#34473D", border: "1px solid #4A5D52" }}
                 >
                     <div className="text-center">
@@ -335,7 +415,7 @@ export default function BudgetApp() {
 
                 {/* Transaction History Widget (Placed between Balance Card and Category Grid) */}
                 <div
-                    className="rounded-3xl p-4 mb-6"
+                    className="rounded-3xl p-4 mb-6 shadow-md"
                     style={{ background: "#34473D", border: "1px solid #4A5D52" }}
                 >
                     <div className="flex items-center justify-between mb-3">
@@ -369,7 +449,7 @@ export default function BudgetApp() {
                     {/* Compact Preview of recent activity */}
                     {entries.length === 0 && deletedHistory.length === 0 ? (
                         <div className="text-center py-2 text-xs opacity-60" style={{ color: "#F5F1E6" }}>
-                            No activity recorded yet.
+                            No activity recorded yet in Dexie DB.
                         </div>
                     ) : (
                         <div className="space-y-2">
@@ -431,7 +511,7 @@ export default function BudgetApp() {
                         <button
                             key={cat.id}
                             onClick={() => openCategory(cat)}
-                            className="aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 active:scale-95 transition"
+                            className="aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 active:scale-95 transition shadow-sm"
                             style={{ background: "#34473D", border: `2px solid ${cat.color}55` }}
                         >
                             <span className="text-3xl">{cat.emoji}</span>
@@ -448,7 +528,7 @@ export default function BudgetApp() {
                 {/* Income button */}
                 <button
                     onClick={openIncome}
-                    className="w-full h-16 rounded-2xl flex items-center justify-center gap-3 text-2xl font-bold mb-6 active:scale-95 transition"
+                    className="w-full h-16 rounded-2xl flex items-center justify-center gap-3 text-2xl font-bold mb-6 active:scale-95 transition shadow-lg"
                     style={{ background: "#E8A93B", color: "#2B3A32" }}
                 >
                     <span>💵</span>
@@ -462,7 +542,7 @@ export default function BudgetApp() {
                             <button
                                 key={e.id}
                                 onClick={() => removeEntry(e.id)}
-                                className="flex items-center gap-1 px-3 py-2 rounded-full active:scale-95 transition"
+                                className="flex items-center gap-1 px-3 py-2 rounded-full active:scale-95 transition shadow-sm"
                                 style={{
                                     background: "#34473D",
                                     border: `1px solid ${e.kind === "in" ? "#E8A93B" : "#4A5D52"}`,
@@ -480,31 +560,6 @@ export default function BudgetApp() {
                         ))}
                     </div>
                 </div>
-
-                {/* Floating big plus button */}
-                <button
-                    onClick={() => openCategory(CATEGORIES[0])}
-                    className="fixed bottom-6 rounded-full flex items-center justify-center text-4xl font-bold shadow-lg active:scale-95 transition"
-                    style={{
-                        background: "#E85C4A",
-                        color: "#F5F1E6",
-                        width: "64px",
-                        height: "64px",
-                        left: "50%",
-                        transform: "translateX(-50%)",
-                    }}
-                >
-                    +
-                </button>
-
-                {saveError && (
-                    <div
-                        className="mt-4 rounded-xl px-4 py-3 text-center text-sm font-semibold"
-                        style={{ background: "#E85C4A22", border: "1px solid #E85C4A", color: "#F5F1E6" }}
-                    >
-                        ⚠️ Could not save. Check connection.
-                    </div>
-                )}
 
                 {/* Keypad Modal */}
                 {pad && (
@@ -548,8 +603,9 @@ export default function BudgetApp() {
                             <div className="grid grid-cols-3 gap-1 p-1 rounded-xl mb-3" style={{ background: "#2B3A32" }}>
                                 <button
                                     onClick={() => setHistoryTab("active")}
-                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${historyTab === "active" ? "shadow font-bold" : "opacity-70"
-                                        }`}
+                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${
+                                        historyTab === "active" ? "shadow font-bold" : "opacity-70"
+                                    }`}
                                     style={{
                                         background: historyTab === "active" ? "#4A5D52" : "transparent",
                                         color: "#F5F1E6",
@@ -559,8 +615,9 @@ export default function BudgetApp() {
                                 </button>
                                 <button
                                     onClick={() => setHistoryTab("deleted")}
-                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${historyTab === "deleted" ? "shadow font-bold" : "opacity-70"
-                                        }`}
+                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${
+                                        historyTab === "deleted" ? "shadow font-bold" : "opacity-70"
+                                    }`}
                                     style={{
                                         background: historyTab === "deleted" ? "#4A5D52" : "transparent",
                                         color: "#E85C4A",
@@ -570,8 +627,9 @@ export default function BudgetApp() {
                                 </button>
                                 <button
                                     onClick={() => setHistoryTab("server")}
-                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${historyTab === "server" ? "shadow font-bold" : "opacity-70"
-                                        }`}
+                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${
+                                        historyTab === "server" ? "shadow font-bold" : "opacity-70"
+                                    }`}
                                     style={{
                                         background: historyTab === "server" ? "#4A5D52" : "transparent",
                                         color: "#E8A93B",
