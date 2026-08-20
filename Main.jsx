@@ -13,9 +13,9 @@ const STORAGE_KEY = "my-money-data";
 
 const CATEGORIES = [
     { id: "food", name: "Grocery", emoji: "🛒", color: "#E8A93B" },
-    { id: "power", name: "Power", emoji: "⚡", color: "#E8A93B" },
+    { id: "electricity", name: "Electricity", emoji: "⚡", color: "#E8A93B" },
     { id: "water", name: "Water", emoji: "💧", color: "#6C93B0" },
-    { id: "bus", name: "Bus", emoji: "🚌", color: "#6C93B0" },
+    { id: "transportation", name: "Transportation", emoji: "🚌", color: "#6C93B0" },
     { id: "health", name: "Health", emoji: "❤️", color: "#E85C4A" },
     { id: "home", name: "Home", emoji: "🏠", color: "#6C93B0" },
 ];
