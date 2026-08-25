@@ -603,9 +603,8 @@ export default function BudgetApp() {
                             <div className="grid grid-cols-3 gap-1 p-1 rounded-xl mb-3" style={{ background: "#2B3A32" }}>
                                 <button
                                     onClick={() => setHistoryTab("active")}
-                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${
-                                        historyTab === "active" ? "shadow font-bold" : "opacity-70"
-                                    }`}
+                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${historyTab === "active" ? "shadow font-bold" : "opacity-70"
+                                        }`}
                                     style={{
                                         background: historyTab === "active" ? "#4A5D52" : "transparent",
                                         color: "#F5F1E6",
@@ -615,9 +614,8 @@ export default function BudgetApp() {
                                 </button>
                                 <button
                                     onClick={() => setHistoryTab("deleted")}
-                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${
-                                        historyTab === "deleted" ? "shadow font-bold" : "opacity-70"
-                                    }`}
+                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${historyTab === "deleted" ? "shadow font-bold" : "opacity-70"
+                                        }`}
                                     style={{
                                         background: historyTab === "deleted" ? "#4A5D52" : "transparent",
                                         color: "#E85C4A",
@@ -627,9 +625,8 @@ export default function BudgetApp() {
                                 </button>
                                 <button
                                     onClick={() => setHistoryTab("server")}
-                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${
-                                        historyTab === "server" ? "shadow font-bold" : "opacity-70"
-                                    }`}
+                                    className={`py-1.5 text-[11px] font-semibold rounded-lg transition ${historyTab === "server" ? "shadow font-bold" : "opacity-70"
+                                        }`}
                                     style={{
                                         background: historyTab === "server" ? "#4A5D52" : "transparent",
                                         color: "#E8A93B",
