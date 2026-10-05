@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-money-pwa-v1';
+const CACHE_NAME = 'pocketwise-pwa-v2';
 const STATIC_ASSETS = [
     '/',
     '/index.html',

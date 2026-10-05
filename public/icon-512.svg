@@ -1,7 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <rect width="512" height="512" rx="100" fill="#2B3A32"/>
-  <rect x="40" y="40" width="432" height="432" rx="80" fill="#34473D" stroke="#4A5D52" stroke-width="10"/>
-  <circle cx="256" cy="256" r="130" fill="#E8A93B" fill-opacity="0.2" stroke="#E8A93B" stroke-width="12"/>
-  <text x="256" y="300" font-size="150" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="bold" fill="#E8A93B">$</text>
-  <circle cx="380" cy="130" r="22" fill="#E85C4A"/>
+  <defs>
+    <linearGradient id="pgrad512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#4F46E5" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="110" fill="url(#pgrad512)"/>
+  <rect x="56" y="56" width="400" height="400" rx="90" fill="white" fill-opacity="0.12"/>
+  <path d="M374 186V154c0-17.6-14.4-32-32-32H118c-17.6 0-32 14.4-32 32v204c0 17.6 14.4 32 32 32h224c17.6 0 32-14.4 32-32v-32c9.4-5.6 16-15.8 16-27.5V213.5c0-11.7-6.6-21.9-16-27.5zM358 214v86h-112V214h112zM118 358V154h224v32h-96c-17.6 0-32 14.4-32 32v86c0 17.6 14.4 32 32 32h96v22H118z" fill="#FFFFFF"/>
+  <circle cx="310" cy="256" r="16" fill="#FDE047"/>
 </svg>

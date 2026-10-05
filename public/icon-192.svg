@@ -1,7 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
-  <rect width="192" height="192" rx="40" fill="#2B3A32"/>
-  <rect x="16" y="16" width="160" height="160" rx="30" fill="#34473D" stroke="#4A5D52" stroke-width="4"/>
-  <circle cx="96" cy="96" r="48" fill="#E8A93B" fill-opacity="0.2" stroke="#E8A93B" stroke-width="4"/>
-  <text x="96" y="112" font-size="54" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="bold" fill="#E8A93B">$</text>
-  <circle cx="140" cy="52" r="8" fill="#E85C4A"/>
+  <defs>
+    <linearGradient id="pgrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#4F46E5" />
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="44" fill="url(#pgrad)"/>
+  <rect x="22" y="22" width="148" height="148" rx="36" fill="white" fill-opacity="0.12"/>
+  <path d="M140 70V58c0-6.6-5.4-12-12-12H44c-6.6 0-12 5.4-12 12v76c0 6.6 5.4 12 12 12h84c6.6 0 12-5.4 12-12v-12c3.5-2.1 6-5.9 6-10.3V80.3c0-4.4-2.5-8.2-6-10.3zM134 80v32h-42V80h42zM44 134V58h84v12h-36c-6.6 0-12 5.4-12 12v32c0 6.6 5.4 12 12 12h36v8H44z" fill="#FFFFFF"/>
+  <circle cx="116" cy="96" r="6" fill="#FDE047"/>
 </svg>
