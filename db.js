@@ -123,6 +123,22 @@ export async function setMeta(key, value) {
     await db.meta.put({ key, value });
 }
 
+export async function getBudget() {
+    return await getMeta('monthlyBudget', 15000);
+}
+
+export async function setBudget(value) {
+    return await setMeta('monthlyBudget', Number(value));
+}
+
+export async function getCurrency() {
+    return await getMeta('currencySymbol', '₱');
+}
+
+export async function setCurrency(symbol) {
+    return await setMeta('currencySymbol', symbol);
+}
+
 // Sync Engine: Gather pending items and attempt to sync to backend
 export async function syncPendingData(apiEndpoint = '/api/sync') {
     if (!navigator.onLine) {

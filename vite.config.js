@@ -12,11 +12,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icon-192.svg', 'icon-512.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
-        name: 'My Money - Financial Management',
-        short_name: 'My Money',
-        description: 'Chalkboard Ledger & Financial Management System with offline logging and background sync.',
-        theme_color: '#2B3A32',
-        background_color: '#2B3A32',
+        name: 'Pocketwise - Expense & Financial Tracker',
+        short_name: 'Pocketwise',
+        description: 'Lightweight, offline-first expense tracking and budget management app optimized for mobile devices.',
+        theme_color: '#4F46E5',
+        background_color: '#F0F2F8',
         display: 'standalone',
         icons: [
           {

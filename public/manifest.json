@@ -1,11 +1,11 @@
 {
-  "name": "My Money - Financial Management",
-  "short_name": "My Money",
-  "description": "Chalkboard Ledger & Financial Management System with Offline Logging and Background Sync",
+  "name": "Pocketwise - Expense & Financial Tracker",
+  "short_name": "Pocketwise",
+  "description": "Lightweight, offline-first expense tracking and budget management app optimized for mobile devices.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#2B3A32",
-  "theme_color": "#2B3A32",
+  "background_color": "#F0F2F8",
+  "theme_color": "#4F46E5",
   "icons": [
     {
       "src": "/icon-192.svg",
