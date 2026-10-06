@@ -1,42 +1,34 @@
 import { useState, useEffect, useMemo } from "react";
 import {
-    getActiveTransactions,
-    getDeletedTransactions,
-    saveTransaction,
-    softDeleteTransaction,
-    restoreDeletedTransaction,
-    purgeDeletedTransaction,
-    clearAllDeletedFromDB,
+    SRS_CATEGORIES,
+    INCOME_SOURCES,
+    initDatabaseDefaults,
+    getExpenses,
+    addExpense,
+    updateExpense,
+    deleteExpense,
+    getIncomes,
+    addIncome,
+    updateIncome,
+    deleteIncome,
+    getSavings,
+    addSavings,
+    updateSavings,
+    deleteSavings,
+    getBudgets,
+    setCategoryBudget,
+    getClient,
+    updateClientProfile,
+    verifyClientLogin,
     getAuditLogs,
-    calculateBalanceFromDB,
-    syncPendingData,
-    getBudget,
-    setBudget as saveBudgetToDB,
     getCurrency,
     setCurrency as saveCurrencyToDB,
+    syncPendingData,
+    resetDatabaseToDemo,
     db,
 } from "./db.js";
 
-// --- Curated Categories matching Pocketwise specifications ---
-const DEFAULT_CATEGORIES = [
-    { id: "grocery", name: "Grocery Expenses", emoji: "🛒", color: "#10B981", bg: "#ECFDF5" },
-    { id: "electricity", name: "Electricity Expenses", emoji: "⚡", color: "#F59E0B", bg: "#FEF3C7" },
-    { id: "water", name: "Water Expenses", emoji: "💧", color: "#06B6D4", bg: "#CFFAFE" },
-    { id: "transport", name: "Transportation Expenses", emoji: "🚌", color: "#6366F1", bg: "#EEF2FF" },
-    { id: "health", name: "Health Expenses", emoji: "❤️", color: "#EF4444", bg: "#FEE2E2" },
-    { id: "house", name: "House Expenses", emoji: "🏠", color: "#8B5CF6", bg: "#F3E8FF" },
-    { id: "shopping", name: "Shopping", emoji: "🛍️", color: "#EC4899", bg: "#FCE7F3" },
-    { id: "dining", name: "Dining & Food", emoji: "🍽️", color: "#F97316", bg: "#FFEDD5" },
-];
-
-const INCOME_CATEGORIES = [
-    { id: "salary", name: "Salary", emoji: "💼", color: "#10B981", bg: "#ECFDF5" },
-    { id: "allowance", name: "Allowance", emoji: "💵", color: "#6366F1", bg: "#EEF2FF" },
-    { id: "business", name: "Business", emoji: "📈", color: "#F59E0B", bg: "#FEF3C7" },
-    { id: "bonus", name: "Bonus / Gift", emoji: "🎁", color: "#EC4899", bg: "#FCE7F3" },
-    { id: "other_income", name: "Other Income", emoji: "✨", color: "#06B6D4", bg: "#CFFAFE" },
-];
-
+// Format currency in Philippine Peso (₱) by default as per SRS 2.3.10
 function formatCurrency(amount, currency = "₱") {
     const num = Math.abs(Number(amount) || 0);
     return `${currency}${num.toLocaleString("en-US", {
@@ -45,1020 +37,1622 @@ function formatCurrency(amount, currency = "₱") {
     })}`;
 }
 
-function formatDate(isoString) {
+// Format date nicely (e.g. "Oct 4, 2026")
+function formatDateDisplay(isoString) {
     if (!isoString) return "";
     try {
         const d = new Date(isoString);
-        return d.toLocaleDateString(undefined, {
+        return d.toLocaleDateString("en-US", {
             month: "short",
             day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
         });
     } catch {
         return "";
     }
 }
 
-export default function PocketwiseApp() {
-    // Core data states
-    const [entries, setEntries] = useState([]);
-    const [deletedHistory, setDeletedHistory] = useState([]);
+export default function PersonalBudgetTrackerWebApp() {
+    // Client Profile & Auth (SRS 2.2.1 & ERD Client Table)
+    const [client, setClient] = useState(null);
+    const [isLoggedIn, setIsLoggedIn] = useState(true);
+    const [loginUsername, setLoginUsername] = useState("mother");
+    const [loginPassword, setLoginPassword] = useState("password123");
+    const [loginError, setLoginError] = useState("");
+    const [showLoginModal, setShowLoginModal] = useState(false);
+
+    // Active Tab Navigation: 'home' | 'income' | 'expenses' | 'budget' | 'savings' | 'reports' | 'settings'
+    const [activeTab, setActiveTab] = useState("home");
+
+    // Expenses Category Filter (matches screenshot: All, Food, Transport, Bills, Medicine, Shopping, Personal Needs, Others)
+    const [selectedExpenseCategory, setSelectedExpenseCategory] = useState("all");
+
+    // Database Records (SRS Section 2.5)
+    const [expensesList, setExpensesList] = useState([]);
+    const [incomesList, setIncomesList] = useState([]);
+    const [savingsList, setSavingsList] = useState([]);
+    const [budgetsList, setBudgetsList] = useState([]);
+    const [categories, setCategories] = useState(SRS_CATEGORIES);
     const [serverLogs, setServerLogs] = useState([]);
-    const [monthlyBudget, setMonthlyBudget] = useState(15000);
     const [currency, setCurrency] = useState("₱");
     const [loading, setLoading] = useState(true);
 
-    // Active navigation tab: 'home' | 'income' | 'expenses' | 'reports' | 'settings'
-    const [activeTab, setActiveTab] = useState("home");
-
-    // Network & PWA status
+    // UI & Sync Status
     const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState("");
     const [installPrompt, setInstallPrompt] = useState(null);
+    const [deviceMode, setDeviceMode] = useState("responsive"); // 'responsive' | 'mobile_preview'
+
+    // Month Selector (Default current: OCTOBER 2026 / current date)
+    const now = new Date();
+    const [selectedMonth] = useState(now.toISOString().slice(0, 7)); // YYYY-MM
+
+    // Month Name Header (e.g., "OCTOBER 2026")
+    const monthHeaderString = useMemo(() => {
+        return now
+            .toLocaleDateString("en-US", { month: "long", year: "numeric" })
+            .toUpperCase();
+    }, [now]);
 
     // Modals
-    const [showKeypad, setShowKeypad] = useState(false);
-    const [keypadType, setKeypadType] = useState("out"); // 'in' | 'out'
-    const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
-    const [keypadValue, setKeypadValue] = useState("");
-    const [keypadNote, setKeypadNote] = useState("");
+    const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
+    const [showAddIncomeModal, setShowAddIncomeModal] = useState(false);
+    const [showAddSavingsModal, setShowAddSavingsModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingItem, setEditingItem] = useState(null);
 
-    const [showBudgetModal, setShowBudgetModal] = useState(false);
-    const [editBudgetInput, setEditBudgetInput] = useState("15000");
+    // Delete Confirmation Modal (SRS 2.2.6 & 2.3.9)
+    const [deleteCandidate, setDeleteCandidate] = useState(null);
 
-    const [showNotificationDrawer, setShowNotificationDrawer] = useState(false);
-    const [reportPeriod, setReportPeriod] = useState("this_month"); // 'this_month' | 'last_month' | 'all'
+    // Form inputs for Add Expense
+    const [formExpenseName, setFormExpenseName] = useState("");
+    const [formExpenseAmount, setFormExpenseAmount] = useState("");
+    const [formExpenseCategory, setFormExpenseCategory] = useState(SRS_CATEGORIES[0].category_id);
+    const [formExpenseDate, setFormExpenseDate] = useState(new Date().toISOString().slice(0, 10));
+    const [formExpenseDesc, setFormExpenseDesc] = useState("");
+    const [formExpenseError, setFormExpenseError] = useState("");
 
-    // Device container toggle for desktop users
-    const [usePhoneFrame, setUsePhoneFrame] = useState(true);
+    // Form inputs for Add Income
+    const [formIncomeSource, setFormIncomeSource] = useState(INCOME_SOURCES[0].name);
+    const [formIncomeAmount, setFormIncomeAmount] = useState("");
+    const [formIncomeDate, setFormIncomeDate] = useState(new Date().toISOString().slice(0, 10));
+    const [formIncomeDesc, setFormIncomeDesc] = useState("");
+    const [formIncomeError, setFormIncomeError] = useState("");
 
-    // Load initial data
-    const refreshData = async () => {
+    // Form inputs for Add Savings
+    const [formSavingsAmount, setFormSavingsAmount] = useState("");
+    const [formSavingsDate, setFormSavingsDate] = useState(new Date().toISOString().slice(0, 10));
+    const [formSavingsDesc, setFormSavingsDesc] = useState("");
+    const [formSavingsError, setFormSavingsError] = useState("");
+
+    // Category Budget Edit Modal
+    const [showBudgetEditModal, setShowBudgetEditModal] = useState(false);
+    const [editingBudgetCat, setEditingBudgetCat] = useState(null);
+    const [formBudgetAmount, setFormBudgetAmount] = useState("");
+
+    // Load initial data from Dexie
+    const refreshAllData = async () => {
         try {
-            const active = await getActiveTransactions();
-            const deleted = await getDeletedTransactions();
+            await initDatabaseDefaults();
+            const clientData = await getClient();
+            const exp = await getExpenses();
+            const inc = await getIncomes();
+            const sav = await getSavings();
+            const bud = await getBudgets(selectedMonth);
             const logs = await getAuditLogs();
-            const budgetVal = await getBudget();
-            const currVal = await getCurrency();
+            const curr = await getCurrency();
 
-            // Migration / Initial demo if completely empty
-            if (active.length === 0 && deleted.length === 0) {
-                const legacy = localStorage.getItem("my-money-data");
-                if (legacy) {
-                    try {
-                        const parsed = JSON.parse(legacy);
-                        if (parsed.entries && parsed.entries.length > 0) {
-                            for (const entry of parsed.entries) {
-                                await db.transactions.put({ ...entry, isDeleted: 0, syncStatus: "pending" });
-                            }
-                        }
-                    } catch (e) {
-                        console.error("Migration error:", e);
-                    }
-                }
-            }
-
-            const freshActive = await getActiveTransactions();
-            const freshDeleted = await getDeletedTransactions();
-
-            setEntries(freshActive);
-            setDeletedHistory(freshDeleted);
+            setClient(clientData);
+            setExpensesList(exp);
+            setIncomesList(inc);
+            setSavingsList(sav);
+            setBudgetsList(bud);
             setServerLogs(logs);
-            setMonthlyBudget(budgetVal || 15000);
-            setCurrency(currVal || "₱");
+            setCurrency(curr || "₱");
         } catch (err) {
-            console.error("Failed to load IndexedDB data:", err);
+            console.error("Dexie database load error:", err);
         }
     };
 
     useEffect(() => {
         (async () => {
-            await refreshData();
+            await refreshAllData();
             setLoading(false);
         })();
 
         const handleOnline = async () => {
             setIsOnline(true);
-            setSyncMessage("Back Online! Syncing offline records...");
+            setSyncMessage("Online! Synchronizing offline entries...");
             setIsSyncing(true);
             const res = await syncPendingData();
             setIsSyncing(false);
             if (res.success) {
-                setSyncMessage("All offline records synced!");
+                setSyncMessage("All records synchronized with database!");
                 setTimeout(() => setSyncMessage(""), 3000);
             }
-            await refreshData();
+            await refreshAllData();
         };
 
         const handleOffline = () => {
             setIsOnline(false);
-            setSyncMessage("Offline mode: Storing securely in IndexedDB");
+            setSyncMessage("Offline mode: Storing securely in local Dexie database.");
         };
 
-        const handleBeforeInstall = (e) => {
+        const handleInstall = (e) => {
             e.preventDefault();
             setInstallPrompt(e);
         };
 
         window.addEventListener("online", handleOnline);
         window.addEventListener("offline", handleOffline);
-        window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+        window.addEventListener("beforeinstallprompt", handleInstall);
 
         return () => {
             window.removeEventListener("online", handleOnline);
             window.removeEventListener("offline", handleOffline);
-            window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+            window.removeEventListener("beforeinstallprompt", handleInstall);
         };
-    }, []);
+    }, [selectedMonth]);
 
-    // Filtered data by periods
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    // Financial Calculations (SRS 1.4, 2.2.9: Remaining Balance = Total Income - Total Expenses)
+    const totalIncome = useMemo(() => {
+        return incomesList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    }, [incomesList]);
 
-    const monthlyTransactions = useMemo(() => {
-        return entries.filter((t) => {
-            if (!t.date) return false;
-            const d = new Date(t.date);
-            return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-        });
-    }, [entries, currentMonth, currentYear]);
+    const totalExpenses = useMemo(() => {
+        return expensesList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    }, [expensesList]);
 
-    const lastMonthTransactions = useMemo(() => {
-        const lastMonthDate = new Date(currentYear, currentMonth - 1, 1);
-        const lmMonth = lastMonthDate.getMonth();
-        const lmYear = lastMonthDate.getFullYear();
-        return entries.filter((t) => {
-            if (!t.date) return false;
-            const d = new Date(t.date);
-            return d.getMonth() === lmMonth && d.getFullYear() === lmYear;
-        });
-    }, [entries, currentMonth, currentYear]);
+    const remainingBalance = useMemo(() => {
+        return totalIncome - totalExpenses;
+    }, [totalIncome, totalExpenses]);
 
-    // Financial Metrics Calculation
-    const totalIncomeThisMonth = useMemo(() => {
-        return monthlyTransactions
-            .filter((t) => t.kind === "in")
-            .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-    }, [monthlyTransactions]);
+    const totalSavings = useMemo(() => {
+        return savingsList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    }, [savingsList]);
 
-    const totalExpensesThisMonth = useMemo(() => {
-        return monthlyTransactions
-            .filter((t) => t.kind === "out")
-            .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-    }, [monthlyTransactions]);
+    const totalBudget = useMemo(() => {
+        return budgetsList.reduce((sum, b) => sum + (Number(b.budget_amount) || 0), 0);
+    }, [budgetsList]);
 
-    const totalIncomeLastMonth = useMemo(() => {
-        return lastMonthTransactions
-            .filter((t) => t.kind === "in")
-            .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-    }, [lastMonthTransactions]);
+    // Category Expense Breakdown & Budget Comparison (SRS Section 2.2.8 & 4.1)
+    const categoryReportData = useMemo(() => {
+        return categories.map((cat) => {
+            const catExpenses = expensesList.filter((e) => e.category_id === cat.category_id);
+            const actualSpent = catExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+            const budgetObj = budgetsList.find((b) => b.category_id === cat.category_id);
+            const budgetAmount = budgetObj ? Number(budgetObj.budget_amount) : cat.defaultBudget || 0;
+            const remaining = budgetAmount - actualSpent;
+            const percentageUsed = budgetAmount > 0 ? Math.round((actualSpent / budgetAmount) * 100) : 0;
+            const shareOfExpenses = totalExpenses > 0 ? Math.round((actualSpent / totalExpenses) * 100) : 0;
 
-    const expensesCountThisMonth = useMemo(() => {
-        return monthlyTransactions.filter((t) => t.kind === "out").length;
-    }, [monthlyTransactions]);
-
-    const netBalance = useMemo(() => {
-        return totalIncomeThisMonth - totalExpensesThisMonth;
-    }, [totalIncomeThisMonth, totalExpensesThisMonth]);
-
-    const remainingBudget = useMemo(() => {
-        return Math.max(0, monthlyBudget - totalExpensesThisMonth);
-    }, [monthlyBudget, totalExpensesThisMonth]);
-
-    const budgetPercentUsed = useMemo(() => {
-        if (!monthlyBudget || monthlyBudget <= 0) return 0;
-        return Math.min(100, Math.round((totalExpensesThisMonth / monthlyBudget) * 100));
-    }, [monthlyBudget, totalExpensesThisMonth]);
-
-    const budgetPercentRemaining = useMemo(() => {
-        return Math.max(0, 100 - budgetPercentUsed);
-    }, [budgetPercentUsed]);
-
-    // Income change comparison %
-    const incomeGrowthPercent = useMemo(() => {
-        if (totalIncomeLastMonth === 0) {
-            return totalIncomeThisMonth > 0 ? "+100%" : "+0.0%";
-        }
-        const diff = ((totalIncomeThisMonth - totalIncomeLastMonth) / totalIncomeLastMonth) * 100;
-        return `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}%`;
-    }, [totalIncomeThisMonth, totalIncomeLastMonth]);
-
-    // Days remaining in month calculation
-    const daysRemaining = useMemo(() => {
-        const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-        return Math.max(0, lastDayOfMonth - now.getDate());
-    }, [currentMonth, currentYear, now]);
-
-    // Weekly average spending
-    const weeklyAverage = useMemo(() => {
-        const currentDay = now.getDate() || 1;
-        const weeksElapsed = Math.max(1, currentDay / 7);
-        return totalExpensesThisMonth / weeksElapsed;
-    }, [totalExpensesThisMonth, now]);
-
-    // Category breakdown calculation
-    const categorySpending = useMemo(() => {
-        const map = {};
-        for (const cat of DEFAULT_CATEGORIES) {
-            map[cat.id] = { ...cat, total: 0, count: 0 };
-        }
-
-        for (const t of monthlyTransactions) {
-            if (t.kind === "out") {
-                const catId = t.categoryId || (DEFAULT_CATEGORIES.find((c) => c.name === t.name)?.id) || "grocery";
-                if (!map[catId]) {
-                    map[catId] = { id: catId, name: t.name, emoji: t.emoji || "💸", color: "#6366F1", bg: "#EEF2FF", total: 0, count: 0 };
-                }
-                map[catId].total += Number(t.amount) || 0;
-                map[catId].count += 1;
-            }
-        }
-
-        return Object.values(map)
-            .map((cat) => ({
+            return {
                 ...cat,
-                percentage: totalExpensesThisMonth > 0 ? Math.round((cat.total / totalExpensesThisMonth) * 100) : 0,
-            }))
-            .sort((a, b) => b.total - a.total);
-    }, [monthlyTransactions, totalExpensesThisMonth]);
+                actualSpent,
+                budgetAmount,
+                remaining,
+                percentageUsed,
+                shareOfExpenses,
+                count: catExpenses.length,
+            };
+        });
+    }, [categories, expensesList, budgetsList, totalExpenses]);
 
-    // Manual sync handler
-    const handleManualSync = async () => {
-        setIsSyncing(true);
-        setSyncMessage("Syncing with cloud backend...");
-        const res = await syncPendingData();
-        setIsSyncing(false);
+    // Filtered Expenses for Expenses Tab
+    const filteredExpenses = useMemo(() => {
+        if (selectedExpenseCategory === "all") return expensesList;
+        return expensesList.filter((e) => e.category_id === selectedExpenseCategory);
+    }, [expensesList, selectedExpenseCategory]);
+
+    const filteredTotalExpense = useMemo(() => {
+        return filteredExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    }, [filteredExpenses]);
+
+    // Handler: Client Login (SRS 2.2.1)
+    const handleLoginSubmit = async (e) => {
+        e?.preventDefault();
+        setLoginError("");
+        const res = await verifyClientLogin(loginUsername, loginPassword);
         if (res.success) {
-            setSyncMessage("Cloud sync complete!");
-        } else if (res.reason === "offline") {
-            setSyncMessage("Currently offline. Changes remain saved locally.");
+            setClient(res.client);
+            setIsLoggedIn(true);
+            setShowLoginModal(false);
         } else {
-            setSyncMessage("Offline records preserved in Dexie IndexedDB.");
-        }
-        setTimeout(() => setSyncMessage(""), 3500);
-        await refreshData();
-    };
-
-    // Install PWA
-    const handleInstallApp = async () => {
-        if (!installPrompt) return;
-        installPrompt.prompt();
-        const { outcome } = await installPrompt.userChoice;
-        if (outcome === "accepted") setInstallPrompt(null);
-    };
-
-    // Open add transaction sheet
-    const openAddTransaction = (type = "out", defaultCat = null) => {
-        setKeypadType(type);
-        const categories = type === "in" ? INCOME_CATEGORIES : DEFAULT_CATEGORIES;
-        setSelectedCategory(defaultCat || categories[0]);
-        setKeypadValue("");
-        setKeypadNote("");
-        setShowKeypad(true);
-    };
-
-    // Save transaction
-    const handleSaveTransaction = async () => {
-        const amount = parseFloat(keypadValue);
-        if (isNaN(amount) || amount <= 0) return;
-
-        const newEntry = {
-            id: Date.now(),
-            categoryId: selectedCategory.id,
-            name: keypadNote.trim() || selectedCategory.name,
-            emoji: selectedCategory.emoji,
-            amount,
-            kind: keypadType,
-            date: new Date().toISOString(),
-        };
-
-        await saveTransaction(newEntry);
-        setShowKeypad(false);
-        setKeypadValue("");
-        setKeypadNote("");
-        await refreshData();
-    };
-
-    // Soft delete transaction
-    const handleDeleteTransaction = async (id) => {
-        await softDeleteTransaction(id);
-        await refreshData();
-    };
-
-    // Restore deleted transaction
-    const handleRestoreTransaction = async (id) => {
-        await restoreDeletedTransaction(id);
-        await refreshData();
-    };
-
-    // Save Budget
-    const handleSaveBudget = async () => {
-        const val = parseFloat(editBudgetInput);
-        if (!isNaN(val) && val > 0) {
-            setMonthlyBudget(val);
-            await saveBudgetToDB(val);
-            setShowBudgetModal(false);
+            setLoginError(res.message);
         }
     };
 
-    // CSV Export functionality (specified in Figma workflow!)
-    const handleExportCSV = () => {
-        const targetList = reportPeriod === "last_month" ? lastMonthTransactions : reportPeriod === "all" ? entries : monthlyTransactions;
-        if (targetList.length === 0) {
-            alert("No transactions available to export for this timeframe.");
+    // Handler: Add Expense (SRS 2.2.3 & 2.6 #5, #6)
+    const handleAddExpenseSubmit = async (e) => {
+        e?.preventDefault();
+        setFormExpenseError("");
+
+        if (!formExpenseName.trim()) {
+            setFormExpenseError("Expense name is required.");
+            return;
+        }
+        const amt = parseFloat(formExpenseAmount);
+        if (isNaN(amt) || amt <= 0) {
+            setFormExpenseError("Please enter a valid positive amount.");
             return;
         }
 
-        const headers = ["ID", "Date", "Type", "Category", "Description", "Amount", "Currency", "SyncStatus"];
-        const rows = targetList.map((t) => [
-            t.id,
-            `"${new Date(t.date).toISOString()}"`,
-            t.kind === "in" ? "Income" : "Expense",
-            `"${t.name || ""}"`,
-            `"${t.name || ""}"`,
-            t.amount,
-            currency,
-            t.syncStatus || "local",
+        await addExpense({
+            name: formExpenseName.trim(),
+            category_id: formExpenseCategory,
+            amount: amt,
+            date: new Date(formExpenseDate).toISOString(),
+            description: formExpenseDesc.trim(),
+        });
+
+        setFormExpenseName("");
+        setFormExpenseAmount("");
+        setFormExpenseDesc("");
+        setShowAddExpenseModal(false);
+        await refreshAllData();
+    };
+
+    // Handler: Add Income (SRS 2.2.2)
+    const handleAddIncomeSubmit = async (e) => {
+        e?.preventDefault();
+        setFormIncomeError("");
+
+        if (!formIncomeSource.trim()) {
+            setFormIncomeError("Income source is required.");
+            return;
+        }
+        const amt = parseFloat(formIncomeAmount);
+        if (isNaN(amt) || amt <= 0) {
+            setFormIncomeError("Please enter a valid positive amount.");
+            return;
+        }
+
+        await addIncome({
+            source: formIncomeSource.trim(),
+            amount: amt,
+            date: new Date(formIncomeDate).toISOString(),
+            description: formIncomeDesc.trim(),
+        });
+
+        setFormIncomeAmount("");
+        setFormIncomeDesc("");
+        setShowAddIncomeModal(false);
+        await refreshAllData();
+    };
+
+    // Handler: Add Savings (SRS 2.2.10)
+    const handleAddSavingsSubmit = async (e) => {
+        e?.preventDefault();
+        setFormSavingsError("");
+
+        const amt = parseFloat(formSavingsAmount);
+        if (isNaN(amt) || amt <= 0) {
+            setFormSavingsError("Please enter a valid positive savings amount.");
+            return;
+        }
+
+        await addSavings({
+            amount: amt,
+            date: new Date(formSavingsDate).toISOString(),
+            description: formSavingsDesc.trim() || "Personal Savings",
+        });
+
+        setFormSavingsAmount("");
+        setFormSavingsDesc("");
+        setShowAddSavingsModal(false);
+        await refreshAllData();
+    };
+
+    // Handler: Open Edit Transaction (SRS 2.2.5)
+    const openEditModal = (item, type) => {
+        setEditingItem({
+            type,
+            data: {
+                id: type === "expense" ? item.expense_id : type === "income" ? item.income_id : item.savings_id,
+                name: item.name || item.source || item.description || "",
+                amount: item.amount.toString(),
+                category_id: item.category_id || "food",
+                date: item.date ? item.date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+                description: item.description || "",
+            },
+        });
+        setShowEditModal(true);
+    };
+
+    // Handler: Save Edit Transaction
+    const handleSaveEditSubmit = async () => {
+        if (!editingItem) return;
+        const amt = parseFloat(editingItem.data.amount);
+        if (isNaN(amt) || amt <= 0) {
+            alert("Please enter a valid amount.");
+            return;
+        }
+
+        if (editingItem.type === "expense") {
+            await updateExpense(editingItem.data.id, {
+                name: editingItem.data.name.trim() || "Expense",
+                category_id: editingItem.data.category_id,
+                amount: amt,
+                date: new Date(editingItem.data.date).toISOString(),
+                description: editingItem.data.description,
+            });
+        } else if (editingItem.type === "income") {
+            await updateIncome(editingItem.data.id, {
+                source: editingItem.data.name.trim() || "Salary",
+                amount: amt,
+                date: new Date(editingItem.data.date).toISOString(),
+                description: editingItem.data.description,
+            });
+        } else if (editingItem.type === "savings") {
+            await updateSavings(editingItem.data.id, {
+                amount: amt,
+                date: new Date(editingItem.data.date).toISOString(),
+                description: editingItem.data.description || "Personal Savings",
+            });
+        }
+
+        setShowEditModal(false);
+        setEditingItem(null);
+        await refreshAllData();
+    };
+
+    // Handler: Confirm Delete (SRS 2.2.6 & 2.3.9)
+    const executeDelete = async () => {
+        if (!deleteCandidate) return;
+        if (deleteCandidate.type === "expense") {
+            await deleteExpense(deleteCandidate.id);
+        } else if (deleteCandidate.type === "income") {
+            await deleteIncome(deleteCandidate.id);
+        } else if (deleteCandidate.type === "savings") {
+            await deleteSavings(deleteCandidate.id);
+        }
+        setDeleteCandidate(null);
+        await refreshAllData();
+    };
+
+    // Handler: Save Category Budget
+    const handleSaveCategoryBudget = async () => {
+        if (!editingBudgetCat) return;
+        const amt = parseFloat(formBudgetAmount);
+        if (isNaN(amt) || amt < 0) {
+            alert("Please enter a valid budget amount.");
+            return;
+        }
+        await setCategoryBudget(editingBudgetCat.category_id, amt, selectedMonth);
+        setShowBudgetEditModal(false);
+        setEditingBudgetCat(null);
+        await refreshAllData();
+    };
+
+    // Handler: Export CSV Report (Supporting Info 4.1)
+    const handleExportCSV = () => {
+        const headers = ["Category", "Budget", "Actual Expense", "Remaining", "Status"];
+        const rows = categoryReportData.map((c) => [
+            `"${c.category_name}"`,
+            c.budgetAmount,
+            c.actualSpent,
+            c.remaining,
+            c.percentageUsed > 100 ? "EXCEEDED" : c.percentageUsed >= 80 ? "WARNING" : "HEALTHY",
         ]);
 
-        const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+        const summaryRows = [
+            [],
+            ["TOTAL INCOME", totalIncome],
+            ["TOTAL EXPENSES", totalExpenses],
+            ["REMAINING BALANCE", remainingBalance],
+            ["TOTAL SAVINGS", totalSavings],
+        ];
+
+        const csvContent =
+            "data:text/csv;charset=utf-8," +
+            [headers.join(","), ...rows.map((r) => r.join(",")), ...summaryRows.map((r) => r.join(","))].join("\n");
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        const filename = `Pocketwise_Report_${reportPeriod}_${new Date().toISOString().slice(0, 10)}.csv`;
-        link.setAttribute("download", filename);
+        link.setAttribute("download", `Personal_Budget_Tracker_Report_${selectedMonth}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     };
 
-    // Demo Data Seeder for quick presentation
-    const handleSeedDemoData = async () => {
-        const demoItems = [
-            { id: Date.now() - 800000, categoryId: "salary", name: "Monthly Salary", emoji: "💼", amount: 28500, kind: "in", date: new Date().toISOString() },
-            { id: Date.now() - 700000, categoryId: "grocery", name: "Grocery Expenses", emoji: "🛒", amount: 2450, kind: "out", date: new Date().toISOString() },
-            { id: Date.now() - 600000, categoryId: "electricity", name: "Electricity Expenses", emoji: "⚡", amount: 1850, kind: "out", date: new Date().toISOString() },
-            { id: Date.now() - 500000, categoryId: "water", name: "Water Expenses", emoji: "💧", amount: 480, kind: "out", date: new Date().toISOString() },
-            { id: Date.now() - 400000, categoryId: "transport", name: "Transportation Expenses", emoji: "🚌", amount: 620, kind: "out", date: new Date().toISOString() },
-            { id: Date.now() - 300000, categoryId: "dining", name: "Dining & Food", emoji: "🍽️", amount: 750, kind: "out", date: new Date().toISOString() },
-        ];
-
-        for (const item of demoItems) {
-            await saveTransaction(item);
-        }
-        await refreshData();
-    };
-
     if (loading) {
         return (
-            <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#F0F2F8]">
-                <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white text-2xl shadow-lg animate-pulse mb-3">
+            <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#F4F5FA]">
+                <div className="w-16 h-16 rounded-3xl bg-indigo-600 flex items-center justify-center text-white text-3xl shadow-xl shadow-indigo-500/25 animate-pulse mb-4">
                     💳
                 </div>
-                <div className="text-base font-bold text-slate-700">Pocketwise</div>
-                <div className="text-xs text-slate-400 mt-1">Loading offline database...</div>
+                <div className="text-xl font-extrabold text-slate-800 tracking-tight">Personal Budget Tracker</div>
+                <div className="text-xs text-slate-400 mt-1">Starting web application...</div>
             </div>
         );
     }
 
-    // App Content
-    const appBody = (
-        <div className="w-full flex flex-col pb-28 pt-2">
-            {/* Top Bar: Pocketwise + Overview & Notifications */}
-            <div className="flex items-center justify-between px-4 pt-3 pb-2">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] text-white flex items-center justify-center shadow-md shadow-indigo-500/20">
-                        <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                            <path d="M21 7.28V5c0-1.1-.9-2-2-2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-2.28c.59-.35 1-.98 1-1.72V9c0-.74-.41-1.37-1-1.72zM20 9v6h-7V9h7zM5 19V5h14v2h-6c-1.1 0-2 .9-2 2v6c0 1.1.9 2 2 2h6v2H5z" />
-                        </svg>
-                    </div>
-                    <div>
-                        <div className="text-lg font-extrabold text-slate-900 tracking-tight leading-tight">
-                            Pocketwise
+    // Navigation Items list
+    const navItems = [
+        { id: "home", label: "Dashboard", icon: "🏠" },
+        { id: "income", label: "Income", icon: "💵" },
+        { id: "expenses", label: "Expenses", icon: "💳" },
+        { id: "budget", label: "Budgets", icon: "📊" },
+        { id: "savings", label: "Savings", icon: "💰" },
+        { id: "reports", label: "Financial Summary", icon: "📈" },
+        { id: "settings", label: "Settings", icon: "⚙️" },
+    ];
+
+    // =========================================================================
+    // RENDER MAIN APPLICATION
+    // =========================================================================
+    return (
+        <div className="min-h-screen bg-[#F0F2F8] text-slate-800 flex flex-col selection:bg-indigo-500 selection:text-white">
+            {/* =========================================================================
+                WEB APPLICATION TOP NAVIGATION BAR (FOR DESKTOP & TABLETS)
+            ========================================================================= */}
+            <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex items-center justify-between h-16">
+                        {/* Left: Brand Logo & Title */}
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] text-white flex items-center justify-center shadow-md shadow-indigo-500/20 font-black text-xl">
+                                ₱
+                            </div>
+                            <div>
+                                <div className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                                    Personal Budget Tracker
+                                    <span className="hidden md:inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                        Web App
+                                    </span>
+                                </div>
+                                <div className="text-[11px] font-medium text-slate-400">
+                                    Client: <strong className="text-slate-700">{client ? client.name : "Maria (Mother)"}</strong>
+                                </div>
+                            </div>
                         </div>
-                        <div className="text-[11px] font-semibold text-slate-400">
-                            {activeTab === "home" && "Overview"}
-                            {activeTab === "income" && "Income Stream"}
-                            {activeTab === "expenses" && "Expense Manager"}
-                            {activeTab === "reports" && "Financial Reports"}
-                            {activeTab === "settings" && "Preferences"}
+
+                        {/* Center: Desktop Navigation Tabs */}
+                        <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl">
+                            {navItems.map((item) => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => setActiveTab(item.id)}
+                                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-1.5 ${
+                                        activeTab === item.id
+                                            ? "bg-white text-indigo-600 shadow-xs"
+                                            : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                                    }`}
+                                >
+                                    <span>{item.icon}</span>
+                                    <span>{item.label}</span>
+                                </button>
+                            ))}
+                        </nav>
+
+                        {/* Right: Actions, Sync, & User Account */}
+                        <div className="flex items-center gap-2.5">
+                            {/* Sync Status Badge */}
+                            <button
+                                onClick={async () => {
+                                    setIsSyncing(true);
+                                    setSyncMessage("Syncing database...");
+                                    const res = await syncPendingData();
+                                    setIsSyncing(false);
+                                    setSyncMessage(res.success ? "All records synchronized!" : "Saved in Dexie offline database.");
+                                    setTimeout(() => setSyncMessage(""), 3000);
+                                    await refreshAllData();
+                                }}
+                                className="px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 bg-white border border-slate-200/80 shadow-xs text-slate-700 hover:bg-slate-50 transition"
+                                title="Click to synchronize offline data"
+                            >
+                                <span className={`w-2.5 h-2.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500"} ${isSyncing ? "animate-ping" : ""}`} />
+                                <span className="hidden sm:inline">{isSyncing ? "Syncing..." : isOnline ? "Online" : "Offline"}</span>
+                            </button>
+
+                            {/* Quick Add Buttons on Desktop */}
+                            <div className="hidden lg:flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        setFormIncomeAmount("");
+                                        setFormIncomeDesc("");
+                                        setShowAddIncomeModal(true);
+                                    }}
+                                    className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-xs active:scale-95 transition"
+                                >
+                                    + Income
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setFormExpenseName("");
+                                        setFormExpenseAmount("");
+                                        setFormExpenseDesc("");
+                                        setFormExpenseCategory(SRS_CATEGORIES[0].category_id);
+                                        setShowAddExpenseModal(true);
+                                    }}
+                                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 active:scale-95 transition"
+                                >
+                                    + Expense
+                                </button>
+                            </div>
+
+                            {/* User Account / Profile */}
+                            <button
+                                onClick={() => setActiveTab("settings")}
+                                className="w-9 h-9 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs hover:bg-indigo-100 transition"
+                                title="Client Account & Settings"
+                            >
+                                👩‍👦
+                            </button>
                         </div>
                     </div>
                 </div>
+            </header>
 
-                <div className="flex items-center gap-2">
-                    {/* Offline / Online Sync status badge */}
-                    <button
-                        onClick={handleManualSync}
-                        className="px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5 transition active:scale-95 bg-white border border-slate-200 shadow-sm text-slate-700"
-                        title="Click to trigger cloud synchronization"
-                    >
-                        <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500"} ${isSyncing ? "animate-ping" : ""}`} />
-                        <span>{isSyncing ? "Syncing..." : isOnline ? "Synced" : "Offline"}</span>
-                    </button>
-
-                    {/* Notification Bell */}
-                    <button
-                        onClick={() => setShowNotificationDrawer(true)}
-                        className="w-10 h-10 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center justify-center text-slate-700 hover:bg-slate-50 transition active:scale-95 relative"
-                        title="Notifications and audit activity"
-                    >
-                        <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                        </svg>
-                        {serverLogs.length > 0 && (
-                            <span className="w-2 h-2 rounded-full bg-indigo-600 absolute top-2.5 right-2.5 ring-2 ring-white" />
-                        )}
-                    </button>
-                </div>
-            </div>
-
-            {/* Sync banner if active */}
+            {/* Sync Alert Banner */}
             {syncMessage && (
-                <div className="mx-4 mt-2 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-50 border border-indigo-100 text-indigo-700 text-center animate-fade-in">
+                <div className="bg-indigo-50 border-b border-indigo-100 text-indigo-700 text-xs font-semibold py-2 px-4 text-center animate-fade-in shadow-xs">
                     {syncMessage}
                 </div>
             )}
 
-            {/* PWA Install Alert if prompt available */}
+            {/* PWA Install Alert */}
             {installPrompt && (
-                <div className="mx-4 mt-2 p-3 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white flex items-center justify-between shadow-md">
-                    <div className="flex items-center gap-2">
-                        <span className="text-xl">📲</span>
-                        <div className="text-xs font-bold leading-tight">
-                            Install Pocketwise App
-                            <div className="text-[10px] font-normal opacity-90">OPPO A9 2020 & Android Ready</div>
+                <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 mt-3">
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between shadow-md">
+                        <div className="flex items-center gap-3">
+                            <span className="text-2xl">📲</span>
+                            <div>
+                                <div className="text-sm font-bold">Install Personal Budget Tracker</div>
+                                <div className="text-xs opacity-90">Install as a standalone web app on your PC, Tablet, or Phone</div>
+                            </div>
                         </div>
+                        <button
+                            onClick={async () => {
+                                installPrompt.prompt();
+                                const { outcome } = await installPrompt.userChoice;
+                                if (outcome === "accepted") setInstallPrompt(null);
+                            }}
+                            className="px-4 py-1.5 bg-white text-indigo-600 rounded-xl text-xs font-bold active:scale-95 transition shadow-xs"
+                        >
+                            Install App
+                        </button>
                     </div>
-                    <button
-                        onClick={handleInstallApp}
-                        className="px-3 py-1 bg-white text-indigo-600 rounded-xl text-xs font-bold active:scale-95 transition"
-                    >
-                        Install
-                    </button>
                 </div>
             )}
 
-            {/* --- TAB 1: HOME (FIGMA DASHBOARD) --- */}
-            {activeTab === "home" && (
-                <div className="px-4 space-y-4 mt-3">
-                    {/* 2x2 Metric Cards Grid */}
-                    <div className="grid grid-cols-2 gap-3">
-                        {/* TOTAL INCOME */}
-                        <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                                    TOTAL INCOME
-                                </span>
-                                <div className="w-7 h-7 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center text-xs font-bold">
-                                    ↓
+            {/* =========================================================================
+                MAIN WEB CONTENT AREA
+            ========================================================================= */}
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-32 md:pb-12">
+                {/* =====================================================================
+                    VIEW 1: DASHBOARD (HOME)
+                ===================================================================== */}
+                {activeTab === "home" && (
+                    <div className="space-y-6 animate-fade-in">
+                        {/* Top Hero Cards (4 across on desktop) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {/* 1. Total Income */}
+                            <div className="bg-white rounded-3xl p-5 shadow-xs border border-slate-100 flex flex-col justify-between hover:shadow-md transition">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                                        TOTAL INCOME
+                                    </span>
+                                    <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center text-sm font-bold">
+                                        ↓
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-3xl font-extrabold text-slate-900 tracking-tight tabular-nums">
+                                        {formatCurrency(totalIncome, currency)}
+                                    </div>
+                                    <div className="text-xs font-semibold text-emerald-600 mt-1 flex items-center gap-1">
+                                        <span>{incomesList.length} income entries logged</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div>
-                                <div className="text-2xl font-extrabold text-slate-900 tracking-tight tabular-nums">
-                                    {formatCurrency(totalIncomeThisMonth, currency)}
+
+                            {/* 2. Total Expenses */}
+                            <div className="bg-white rounded-3xl p-5 shadow-xs border border-slate-100 flex flex-col justify-between hover:shadow-md transition">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                                        TOTAL EXPENSES
+                                    </span>
+                                    <div className="w-8 h-8 rounded-full bg-rose-50 text-rose-500 border border-rose-100 flex items-center justify-center text-sm font-bold">
+                                        ↑
+                                    </div>
                                 </div>
-                                <div className="text-[11px] font-semibold text-emerald-600 mt-1 flex items-center gap-0.5">
-                                    {incomeGrowthPercent} from last month
+                                <div>
+                                    <div className="text-3xl font-extrabold text-slate-900 tracking-tight tabular-nums">
+                                        {formatCurrency(totalExpenses, currency)}
+                                    </div>
+                                    <div className="text-xs font-semibold text-slate-400 mt-1">
+                                        {expensesList.length} expenses this month
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 3. Remaining Balance (SRS 2.2.9: Total Income - Total Expenses) */}
+                            <div className="bg-white rounded-3xl p-5 shadow-xs border border-slate-100 flex flex-col justify-between hover:shadow-md transition">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                                        REMAINING BALANCE
+                                    </span>
+                                    <div className="w-8 h-8 rounded-full bg-teal-50 text-teal-600 border border-teal-100 flex items-center justify-center text-sm">
+                                        ⚖️
+                                    </div>
+                                </div>
+                                <div>
+                                    <div
+                                        className={`text-3xl font-extrabold tracking-tight tabular-nums ${
+                                            remainingBalance >= 0 ? "text-slate-900" : "text-rose-600"
+                                        }`}
+                                    >
+                                        {remainingBalance < 0 ? "-" : ""}
+                                        {formatCurrency(remainingBalance, currency)}
+                                    </div>
+                                    <div className="text-xs font-semibold text-slate-400 mt-1">
+                                        {remainingBalance >= 0 ? "Income exceeds expenses" : "Deficit: Over spending"}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 4. Total Savings */}
+                            <div className="bg-white rounded-3xl p-5 shadow-xs border border-slate-100 flex flex-col justify-between hover:shadow-md transition">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                                        TOTAL SAVINGS
+                                    </span>
+                                    <div className="w-8 h-8 rounded-full bg-purple-50 text-purple-600 border border-purple-100 flex items-center justify-center text-sm">
+                                        💰
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-3xl font-extrabold text-purple-700 tracking-tight tabular-nums">
+                                        {formatCurrency(totalSavings, currency)}
+                                    </div>
+                                    <div className="text-xs font-semibold text-slate-400 mt-1">
+                                        {savingsList.length} savings deposits
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* TOTAL EXPENSES */}
-                        <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                                    TOTAL EXPENSES
-                                </span>
-                                <div className="w-7 h-7 rounded-full bg-rose-50 text-rose-500 border border-rose-100 flex items-center justify-center text-xs font-bold">
-                                    ↑
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-2xl font-extrabold text-slate-900 tracking-tight tabular-nums">
-                                    {formatCurrency(totalExpensesThisMonth, currency)}
-                                </div>
-                                <div className="text-[11px] font-semibold text-slate-400 mt-1">
-                                    {expensesCountThisMonth} transactions this month
-                                </div>
-                            </div>
-                        </div>
+                        {/* 2-Column Responsive Layout */}
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            {/* Left Column (7 cols): Overall Budget Progress & Spending Breakdown */}
+                            <div className="lg:col-span-7 space-y-6">
+                                {/* Overall Budget Progress Card */}
+                                <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div>
+                                            <div className="text-xs font-bold tracking-wider text-slate-400 uppercase">
+                                                MONTHLY BUDGET PROGRESS
+                                            </div>
+                                            <div className="text-lg font-extrabold text-slate-900 mt-0.5">
+                                                Overall Spending Plan
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setActiveTab("budget")}
+                                            className="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold text-xs transition"
+                                        >
+                                            Adjust Budgets →
+                                        </button>
+                                    </div>
 
-                        {/* REMAINING BUDGET */}
-                        <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                                    REMAINING BUDGET
-                                </span>
-                                <div className="w-7 h-7 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center text-xs">
-                                    💳
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-2xl font-extrabold text-slate-900 tracking-tight tabular-nums">
-                                    {formatCurrency(remainingBudget, currency)}
-                                </div>
-                                <div className="text-[11px] font-semibold text-slate-400 mt-1">
-                                    {budgetPercentRemaining}% available to spend
-                                </div>
-                            </div>
-                        </div>
+                                    <div className="flex items-baseline justify-between mt-3">
+                                        <div className="flex items-baseline gap-2">
+                                            <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
+                                                {formatCurrency(totalExpenses, currency)}
+                                            </span>
+                                            <span className="text-xs font-semibold text-slate-400">
+                                                spent of {formatCurrency(totalBudget, currency)} budget
+                                            </span>
+                                        </div>
+                                        <span className="text-sm font-extrabold text-indigo-600">
+                                            {totalBudget > 0 ? Math.min(100, Math.round((totalExpenses / totalBudget) * 100)) : 0}% used
+                                        </span>
+                                    </div>
 
-                        {/* NET BALANCE */}
-                        <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                                    NET BALANCE
-                                </span>
-                                <div className="w-7 h-7 rounded-full bg-teal-50 text-teal-600 border border-teal-100 flex items-center justify-center text-xs">
-                                    📊
+                                    {/* Progress Bar */}
+                                    <div className="w-full h-3.5 bg-slate-100 rounded-full overflow-hidden my-3">
+                                        <div
+                                            className={`h-full rounded-full transition-all duration-700 ${
+                                                totalBudget > 0 && totalExpenses > totalBudget
+                                                    ? "bg-rose-500"
+                                                    : totalBudget > 0 && totalExpenses / totalBudget >= 0.8
+                                                    ? "bg-amber-500"
+                                                    : "bg-gradient-to-r from-indigo-500 to-purple-600"
+                                            }`}
+                                            style={{
+                                                width: `${totalBudget > 0 ? Math.min(100, (totalExpenses / totalBudget) * 100) : 0}%`,
+                                            }}
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-xs font-medium text-slate-500 pt-1">
+                                        <span>
+                                            Remaining to spend:{" "}
+                                            <strong className="text-slate-800">{formatCurrency(Math.max(0, totalBudget - totalExpenses), currency)}</strong>
+                                        </span>
+                                        <span>
+                                            {totalExpenses > totalBudget ? (
+                                                <span className="text-rose-600 font-bold">⚠️ Budget Exceeded!</span>
+                                            ) : (
+                                                <span className="text-emerald-600 font-bold">✓ Within Budget</span>
+                                            )}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Category Spending Breakdown */}
+                                <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div>
+                                            <div className="text-xs font-bold tracking-wider text-slate-400 uppercase">
+                                                BREAKDOWN
+                                            </div>
+                                            <div className="text-lg font-extrabold text-slate-900 mt-0.5">
+                                                Spending by Category
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setActiveTab("expenses")}
+                                            className="text-xs font-bold text-indigo-600 hover:underline"
+                                        >
+                                            View all expenses →
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {categoryReportData.map((cat) => (
+                                            <div key={cat.category_id} className="space-y-1.5">
+                                                <div className="flex items-center justify-between text-xs">
+                                                    <div className="flex items-center gap-2">
+                                                        <span
+                                                            className="w-7 h-7 rounded-xl flex items-center justify-center text-sm shadow-xs"
+                                                            style={{ backgroundColor: cat.bg, color: cat.color }}
+                                                        >
+                                                            {cat.emoji}
+                                                        </span>
+                                                        <span className="font-bold text-slate-800">{cat.category_name}</span>
+                                                    </div>
+                                                    <div className="text-right font-bold text-slate-900 tabular-nums">
+                                                        {formatCurrency(cat.actualSpent, currency)}{" "}
+                                                        <span className="text-slate-400 font-normal">({cat.shareOfExpenses}%)</span>
+                                                    </div>
+                                                </div>
+                                                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                    <div
+                                                        className="h-full rounded-full transition-all duration-500"
+                                                        style={{
+                                                            width: `${cat.shareOfExpenses}%`,
+                                                            backgroundColor: cat.color,
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
-                            <div>
-                                <div className={`text-2xl font-extrabold tracking-tight tabular-nums ${netBalance >= 0 ? "text-slate-900" : "text-rose-600"}`}>
-                                    {netBalance < 0 ? "-" : ""}{formatCurrency(netBalance, currency)}
+
+                            {/* Right Column (5 cols): Quick Actions & Recent Transactions */}
+                            <div className="lg:col-span-5 space-y-6">
+                                {/* Quick Actions */}
+                                <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                                    <div className="text-base font-extrabold text-slate-900 mb-3">
+                                        Quick Actions
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2.5">
+                                        <button
+                                            onClick={() => {
+                                                setFormExpenseName("");
+                                                setFormExpenseAmount("");
+                                                setFormExpenseDesc("");
+                                                setShowAddExpenseModal(true);
+                                            }}
+                                            className="p-3 rounded-2xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 text-indigo-700 font-bold text-xs text-left transition flex items-center gap-2"
+                                        >
+                                            <span className="text-lg">💳</span>
+                                            <span>Add Expense</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setFormIncomeAmount("");
+                                                setFormIncomeDesc("");
+                                                setShowAddIncomeModal(true);
+                                            }}
+                                            className="p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 text-emerald-700 font-bold text-xs text-left transition flex items-center gap-2"
+                                        >
+                                            <span className="text-lg">💵</span>
+                                            <span>Add Income</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setFormSavingsAmount("");
+                                                setFormSavingsDesc("");
+                                                setShowAddSavingsModal(true);
+                                            }}
+                                            className="p-3 rounded-2xl bg-purple-50 hover:bg-purple-100 border border-purple-100 text-purple-700 font-bold text-xs text-left transition flex items-center gap-2"
+                                        >
+                                            <span className="text-lg">💰</span>
+                                            <span>Record Savings</span>
+                                        </button>
+                                        <button
+                                            onClick={handleExportCSV}
+                                            className="p-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs text-left transition flex items-center gap-2"
+                                        >
+                                            <span className="text-lg">📥</span>
+                                            <span>Export CSV</span>
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="text-[11px] font-semibold text-slate-400 mt-1">
-                                    {netBalance >= 0 ? "You're in a healthy range" : "Spending exceeds income"}
+
+                                {/* Recent Transactions Feed */}
+                                <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="text-base font-extrabold text-slate-900">
+                                            Recent Activity
+                                        </div>
+                                        <button
+                                            onClick={() => setActiveTab("expenses")}
+                                            className="text-xs font-bold text-indigo-600 hover:underline"
+                                        >
+                                            View all
+                                        </button>
+                                    </div>
+
+                                    {expensesList.length === 0 && incomesList.length === 0 ? (
+                                        <div className="text-center py-8 text-xs text-slate-400">
+                                            No recent transactions logged yet.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {expensesList.slice(0, 5).map((item) => {
+                                                const cat = categories.find((c) => c.category_id === item.category_id) || categories[0];
+                                                return (
+                                                    <div
+                                                        key={item.expense_id}
+                                                        className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/70 border border-slate-100 hover:bg-slate-100/60 transition"
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div
+                                                                className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shadow-xs"
+                                                                style={{ backgroundColor: cat.arrowBg, color: cat.arrowColor }}
+                                                            >
+                                                                ↑
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-xs font-bold text-slate-800">{item.name}</div>
+                                                                <div className="text-[10px] text-slate-400 font-medium">
+                                                                    {cat.category_name} • {formatDateDisplay(item.date)}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-extrabold text-slate-900 tabular-nums">
+                                                                -{formatCurrency(item.amount, currency)}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => openEditModal(item, "expense")}
+                                                                className="text-slate-300 hover:text-indigo-600 transition text-xs"
+                                                                title="Edit"
+                                                            >
+                                                                ✏️
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
                     </div>
+                )}
 
-                    {/* MONTHLY BUDGET Card ("Spending plan") */}
-                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                        <div className="flex items-start justify-between mb-2">
+                {/* =====================================================================
+                    VIEW 2: EXPENSES (MATCHES SCREENSHOT & SRS 2.2.3, 2.2.4)
+                ===================================================================== */}
+                {activeTab === "expenses" && (
+                    <div className="space-y-6 animate-fade-in">
+                        {/* Header: Month, Title, Subtitle, and Add Expense Button */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
-                                <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                                    MONTHLY BUDGET
+                                <div className="text-xs font-extrabold tracking-wider text-[#6366F1] uppercase">
+                                    {monthHeaderString}
                                 </div>
-                                <div className="text-base font-bold text-slate-900">
-                                    Spending plan
-                                </div>
+                                <h1 className="text-3xl font-extrabold text-[#111827] tracking-tight mt-0.5">
+                                    Expenses
+                                </h1>
+                                <p className="text-xs font-medium text-slate-500 mt-1">
+                                    Stay on top of where your money goes.
+                                </p>
                             </div>
                             <button
                                 onClick={() => {
-                                    setEditBudgetInput(monthlyBudget.toString());
-                                    setShowBudgetModal(true);
+                                    setFormExpenseName("");
+                                    setFormExpenseAmount("");
+                                    setFormExpenseDesc("");
+                                    setFormExpenseCategory(
+                                        selectedExpenseCategory !== "all" ? selectedExpenseCategory : "food"
+                                    );
+                                    setShowAddExpenseModal(true);
                                 }}
-                                className="px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100 transition active:scale-95"
+                                className="px-5 py-2.5 rounded-2xl bg-[#6366F1] hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/25 active:scale-95 transition flex items-center gap-2 self-start sm:self-auto"
                             >
-                                {budgetPercentUsed}% used
+                                <span className="text-base">+</span>
+                                <span>Add New Expense</span>
                             </button>
                         </div>
 
-                        {/* Amount progress */}
-                        <div className="mt-3 flex items-baseline gap-1.5">
-                            <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
-                                {formatCurrency(totalExpensesThisMonth, currency)}
-                            </span>
-                            <span className="text-xs font-semibold text-slate-400">
-                                of {formatCurrency(monthlyBudget, currency)}
-                            </span>
-                        </div>
-
-                        {/* Progress Bar */}
-                        <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden my-3">
-                            <div
-                                className={`h-full rounded-full transition-all duration-700 ${
-                                    budgetPercentUsed > 90
-                                        ? "bg-rose-500"
-                                        : budgetPercentUsed > 75
-                                        ? "bg-amber-500"
-                                        : "bg-gradient-to-r from-indigo-500 to-purple-500"
+                        {/* Category Filter Pills Row (Exact match to screenshot) */}
+                        <div className="flex gap-2 overflow-x-auto py-1 scrollbar-none select-none">
+                            <button
+                                onClick={() => setSelectedExpenseCategory("all")}
+                                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all duration-200 shrink-0 ${
+                                    selectedExpenseCategory === "all"
+                                        ? "bg-[#6366F1] text-white shadow-md shadow-indigo-500/25"
+                                        : "bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50"
                                 }`}
-                                style={{ width: `${budgetPercentUsed}%` }}
-                            />
-                        </div>
-
-                        {/* Sub statistics row */}
-                        <div className="flex items-center justify-between text-xs font-medium text-slate-400 pt-1">
-                            <div>
-                                {formatCurrency(weeklyAverage, currency)} weekly avg.
-                            </div>
-                            <div>
-                                {daysRemaining} days remaining
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* BREAKDOWN Section ("Spending by category") */}
-                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                        <div className="flex items-center justify-between mb-4">
-                            <div>
-                                <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                                    BREAKDOWN
-                                </div>
-                                <div className="text-base font-bold text-slate-900">
-                                    Spending by category
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setActiveTab("reports")}
-                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 active:scale-95 transition"
                             >
-                                <span>View report</span>
-                                <span>&gt;</span>
+                                All
                             </button>
-                        </div>
-
-                        {/* Category Items list */}
-                        {categorySpending.length === 0 || totalExpensesThisMonth === 0 ? (
-                            <div className="py-6 text-center">
-                                <div className="text-3xl mb-2">🛒</div>
-                                <div className="text-xs font-semibold text-slate-600">No expense recorded yet</div>
-                                <div className="text-[11px] text-slate-400 mt-1">
-                                    Tap the '+' button below to log your first expense
-                                </div>
-                                <button
-                                    onClick={handleSeedDemoData}
-                                    className="mt-3 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
-                                >
-                                    Load Sample Data
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="space-y-3.5">
-                                {categorySpending.slice(0, 5).map((cat) => (
-                                    <div key={cat.id} className="space-y-1.5">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2.5">
-                                                <div
-                                                    className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shadow-2xl"
-                                                    style={{ backgroundColor: cat.bg, color: cat.color }}
-                                                >
-                                                    {cat.emoji}
-                                                </div>
-                                                <span className="text-xs font-bold text-slate-800">
-                                                    {cat.name}
-                                                </span>
-                                            </div>
-                                            <div className="text-right">
-                                                <span className="text-xs font-extrabold text-slate-900 tabular-nums">
-                                                    {formatCurrency(cat.total, currency)}
-                                                </span>
-                                                <span className="text-[10px] font-semibold text-slate-400 ml-1.5">
-                                                    ({cat.percentage}%)
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                                            <div
-                                                className="h-full rounded-full transition-all duration-500"
-                                                style={{
-                                                    width: `${cat.percentage}%`,
-                                                    backgroundColor: cat.color,
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* RECENT TRANSACTIONS */}
-                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="text-base font-bold text-slate-900">
-                                Recent Transactions
-                            </div>
-                            <span className="text-xs font-semibold text-slate-400">
-                                {entries.length} items
-                            </span>
-                        </div>
-
-                        {entries.length === 0 ? (
-                            <div className="text-center py-4 text-xs text-slate-400">
-                                No recent transactions recorded.
-                            </div>
-                        ) : (
-                            <div className="space-y-2.5">
-                                {entries.slice(0, 5).map((item) => (
-                                    <div
-                                        key={item.id}
-                                        className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/70 border border-slate-100 hover:bg-slate-100/60 transition"
+                            {categories.map((cat) => {
+                                const isSelected = selectedExpenseCategory === cat.category_id;
+                                const displayName = cat.shortName || cat.category_name;
+                                return (
+                                    <button
+                                        key={cat.category_id}
+                                        onClick={() => setSelectedExpenseCategory(cat.category_id)}
+                                        className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all duration-200 shrink-0 ${
+                                            isSelected
+                                                ? "bg-[#6366F1] text-white shadow-md shadow-indigo-500/25"
+                                                : "bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50"
+                                        }`}
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-9 h-9 rounded-xl bg-white shadow-sm flex items-center justify-center text-base">
-                                                {item.emoji || (item.kind === "in" ? "💵" : "💸")}
-                                            </div>
-                                            <div>
-                                                <div className="text-xs font-bold text-slate-800">
-                                                    {item.name}
-                                                </div>
-                                                <div className="text-[10px] font-medium text-slate-400">
-                                                    {formatDate(item.date)}
-                                                </div>
-                                            </div>
+                                        {displayName}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* 2-Column Grid on Web: Left List (Screenshot) + Right Category Summary */}
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            {/* Main Expenses List Card (Exact design from screenshot) */}
+                            <div className="lg:col-span-8 bg-white rounded-3xl p-6 shadow-xs border border-slate-100/90">
+                                <div className="flex items-baseline justify-between mb-1">
+                                    <div>
+                                        <div className="text-xs font-medium text-slate-500">
+                                            Total this month
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <span
-                                                className={`text-xs font-extrabold tabular-nums ${
-                                                    item.kind === "in" ? "text-emerald-600" : "text-slate-900"
-                                                }`}
-                                            >
-                                                {item.kind === "in" ? "+" : "-"}{formatCurrency(item.amount, currency)}
-                                            </span>
-                                            <button
-                                                onClick={() => handleDeleteTransaction(item.id)}
-                                                className="w-7 h-7 rounded-lg hover:bg-rose-50 text-slate-300 hover:text-rose-500 flex items-center justify-center transition"
-                                                title="Delete transaction"
-                                            >
-                                                ✕
-                                            </button>
+                                        <div className="text-3xl font-extrabold text-[#111827] tracking-tight mt-1 tabular-nums">
+                                            {formatCurrency(filteredTotalExpense, currency)}
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
+                                    <div className="text-xs font-medium text-slate-400">
+                                        {filteredExpenses.length} entries
+                                    </div>
+                                </div>
 
-            {/* --- TAB 2: INCOME --- */}
-            {activeTab === "income" && (
-                <div className="px-4 space-y-4 mt-3">
-                    <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl p-6 text-white shadow-lg shadow-emerald-500/15">
-                        <div className="text-xs font-semibold opacity-90 uppercase tracking-wider">
-                            Total Income (This Month)
+                                <div className="w-full h-px bg-slate-100 my-4" />
+
+                                {filteredExpenses.length === 0 ? (
+                                    <div className="text-center py-12">
+                                        <div className="text-3xl mb-2">🛒</div>
+                                        <div className="text-sm font-bold text-slate-800">No expense records found</div>
+                                        <div className="text-xs text-slate-400 mt-1">
+                                            No records logged under this filter for {monthHeaderString}.
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                setFormExpenseCategory(
+                                                    selectedExpenseCategory !== "all" ? selectedExpenseCategory : "food"
+                                                );
+                                                setShowAddExpenseModal(true);
+                                            }}
+                                            className="mt-4 px-4 py-2 rounded-xl bg-indigo-50 text-indigo-600 text-xs font-bold hover:bg-indigo-100 transition"
+                                        >
+                                            + Add Expense Now
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {filteredExpenses.map((item) => {
+                                            const cat =
+                                                categories.find((c) => c.category_id === item.category_id) || categories[0];
+                                            return (
+                                                <div
+                                                    key={item.expense_id}
+                                                    className="flex items-center justify-between group py-1 hover:bg-slate-50/60 px-2 rounded-2xl transition"
+                                                >
+                                                    <div className="flex items-center gap-3.5">
+                                                        <div
+                                                            className="w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-base shadow-xs shrink-0 transition"
+                                                            style={{
+                                                                backgroundColor: cat.arrowBg,
+                                                                color: cat.arrowColor,
+                                                            }}
+                                                        >
+                                                            ↑
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-sm font-extrabold text-[#111827] tracking-tight">
+                                                                {item.name}
+                                                            </div>
+                                                            <div className="text-xs font-medium text-slate-400 mt-0.5">
+                                                                {cat.shortName || cat.category_name} • {formatDateDisplay(item.date)}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="text-sm font-extrabold text-[#111827] tracking-tight tabular-nums">
+                                                            -{formatCurrency(item.amount, currency)}
+                                                        </div>
+                                                        <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition">
+                                                            <button
+                                                                onClick={() => openEditModal(item, "expense")}
+                                                                className="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-indigo-600 flex items-center justify-center transition text-xs"
+                                                                title="Edit transaction"
+                                                            >
+                                                                ✏️
+                                                            </button>
+                                                            <button
+                                                                onClick={() =>
+                                                                    setDeleteCandidate({
+                                                                        type: "expense",
+                                                                        id: item.expense_id,
+                                                                        name: item.name,
+                                                                        amount: item.amount,
+                                                                    })
+                                                                }
+                                                                className="w-8 h-8 rounded-lg hover:bg-rose-50 text-slate-300 hover:text-rose-500 flex items-center justify-center transition text-xs font-bold"
+                                                                title="Delete transaction"
+                                                            >
+                                                                ✕
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Right Side: Category Summary & Quick Actions */}
+                            <div className="lg:col-span-4 space-y-6">
+                                <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                                    <div className="text-base font-extrabold text-slate-900 mb-3">
+                                        Category Spending Summary
+                                    </div>
+                                    <div className="space-y-3">
+                                        {categoryReportData.map((cat) => (
+                                            <div key={cat.category_id} className="flex items-center justify-between text-xs">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-base">{cat.emoji}</span>
+                                                    <span className="font-bold text-slate-700">{cat.category_name}</span>
+                                                </div>
+                                                <div className="font-extrabold text-slate-900 tabular-nums">
+                                                    {formatCurrency(cat.actualSpent, currency)}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setFormIncomeAmount("");
+                                            setFormIncomeDesc("");
+                                            setShowAddIncomeModal(true);
+                                        }}
+                                        className="mt-5 w-full py-2.5 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition"
+                                    >
+                                        ↓ Add Income Entry
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div className="text-3xl font-extrabold mt-1 tabular-nums">
-                            {formatCurrency(totalIncomeThisMonth, currency)}
-                        </div>
-                        <div className="mt-4 flex items-center justify-between">
-                            <span className="text-xs opacity-90">
-                                {monthlyTransactions.filter((t) => t.kind === "in").length} income entries
-                            </span>
+                    </div>
+                )}
+
+                {/* =====================================================================
+                    VIEW 3: INCOME (SRS SECTION 1.4 #1 & 2.2.2)
+                ===================================================================== */}
+                {activeTab === "income" && (
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                                <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Income Stream</h1>
+                                <p className="text-xs text-slate-500 mt-1">Record money received from salary, business, and other sources</p>
+                            </div>
                             <button
-                                onClick={() => openAddTransaction("in")}
-                                className="px-3.5 py-1.5 rounded-xl bg-white text-emerald-700 text-xs font-bold shadow-sm active:scale-95 transition"
+                                onClick={() => {
+                                    setFormIncomeAmount("");
+                                    setFormIncomeDesc("");
+                                    setShowAddIncomeModal(true);
+                                }}
+                                className="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-500/25 active:scale-95 transition"
                             >
                                 + Add Income
                             </button>
                         </div>
-                    </div>
 
-                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                        <div className="text-base font-bold text-slate-900 mb-3">
-                            Income Transactions
-                        </div>
-                        {entries.filter((t) => t.kind === "in").length === 0 ? (
-                            <div className="text-center py-8 text-slate-400 text-xs">
-                                No income entries logged yet.
-                            </div>
-                        ) : (
-                            <div className="space-y-2.5">
-                                {entries
-                                    .filter((t) => t.kind === "in")
-                                    .map((item) => (
-                                        <div
-                                            key={item.id}
-                                            className="flex items-center justify-between p-3 rounded-2xl bg-emerald-50/40 border border-emerald-100"
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-9 h-9 rounded-xl bg-white shadow-sm flex items-center justify-center text-base">
-                                                    {item.emoji || "💵"}
-                                                </div>
-                                                <div>
-                                                    <div className="text-xs font-bold text-slate-800">{item.name}</div>
-                                                    <div className="text-[10px] text-slate-400">{formatDate(item.date)}</div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs font-extrabold text-emerald-600 tabular-nums">
-                                                    +{formatCurrency(item.amount, currency)}
-                                                </span>
-                                                <button
-                                                    onClick={() => handleDeleteTransaction(item.id)}
-                                                    className="text-slate-300 hover:text-rose-500 text-xs"
-                                                >
-                                                    ✕
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* --- TAB 3: EXPENSES --- */}
-            {activeTab === "expenses" && (
-                <div className="px-4 space-y-4 mt-3">
-                    <div className="bg-gradient-to-br from-rose-500 to-pink-600 rounded-3xl p-6 text-white shadow-lg shadow-rose-500/15">
-                        <div className="text-xs font-semibold opacity-90 uppercase tracking-wider">
-                            Total Expenses (This Month)
-                        </div>
-                        <div className="text-3xl font-extrabold mt-1 tabular-nums">
-                            {formatCurrency(totalExpensesThisMonth, currency)}
-                        </div>
-                        <div className="mt-4 flex items-center justify-between">
-                            <span className="text-xs opacity-90">
-                                {expensesCountThisMonth} transactions logged
-                            </span>
-                            <button
-                                onClick={() => openAddTransaction("out")}
-                                className="px-3.5 py-1.5 rounded-xl bg-white text-rose-700 text-xs font-bold shadow-sm active:scale-95 transition"
-                            >
-                                + Add Expense
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                        <div className="text-base font-bold text-slate-900 mb-3">
-                            Expense Transactions
-                        </div>
-                        {entries.filter((t) => t.kind === "out").length === 0 ? (
-                            <div className="text-center py-8 text-slate-400 text-xs">
-                                No expense records logged yet.
-                            </div>
-                        ) : (
-                            <div className="space-y-2.5">
-                                {entries
-                                    .filter((t) => t.kind === "out")
-                                    .map((item) => (
-                                        <div
-                                            key={item.id}
-                                            className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100"
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-9 h-9 rounded-xl bg-white shadow-sm flex items-center justify-center text-base">
-                                                    {item.emoji || "💸"}
-                                                </div>
-                                                <div>
-                                                    <div className="text-xs font-bold text-slate-800">{item.name}</div>
-                                                    <div className="text-[10px] text-slate-400">{formatDate(item.date)}</div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs font-extrabold text-slate-900 tabular-nums">
-                                                    -{formatCurrency(item.amount, currency)}
-                                                </span>
-                                                <button
-                                                    onClick={() => handleDeleteTransaction(item.id)}
-                                                    className="text-slate-300 hover:text-rose-500 text-xs"
-                                                >
-                                                    ✕
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* --- TAB 4: REPORTS (SPECIFIED IN FIGMA NOTES) --- */}
-            {activeTab === "reports" && (
-                <div className="px-4 space-y-4 mt-3">
-                    {/* Timeframe selector: This Month / Last Month / All */}
-                    <div className="flex p-1 bg-slate-200/70 rounded-2xl">
-                        {[
-                            { id: "this_month", label: "This Month" },
-                            { id: "last_month", label: "Last Month" },
-                            { id: "all", label: "All Time" },
-                        ].map((t) => (
-                            <button
-                                key={t.id}
-                                onClick={() => setReportPeriod(t.id)}
-                                className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
-                                    reportPeriod === t.id
-                                        ? "bg-white text-indigo-600 shadow-sm"
-                                        : "text-slate-600 hover:text-slate-900"
-                                }`}
-                            >
-                                {t.label}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Summary comparison card */}
-                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                        <div className="text-base font-bold text-slate-900 mb-3">
-                            Period Summary
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="p-3 bg-emerald-50 rounded-2xl">
-                                <div className="text-[10px] font-bold text-emerald-700 uppercase">Total Inflow</div>
-                                <div className="text-lg font-extrabold text-emerald-700 tabular-nums">
-                                    {formatCurrency(
-                                        reportPeriod === "last_month"
-                                            ? totalIncomeLastMonth
-                                            : reportPeriod === "all"
-                                            ? entries.filter((t) => t.kind === "in").reduce((s, t) => s + t.amount, 0)
-                                            : totalIncomeThisMonth,
-                                        currency
-                                    )}
-                                </div>
-                            </div>
-                            <div className="p-3 bg-rose-50 rounded-2xl">
-                                <div className="text-[10px] font-bold text-rose-700 uppercase">Total Outflow</div>
-                                <div className="text-lg font-extrabold text-rose-700 tabular-nums">
-                                    {formatCurrency(
-                                        reportPeriod === "last_month"
-                                            ? lastMonthTransactions.filter((t) => t.kind === "out").reduce((s, t) => s + t.amount, 0)
-                                            : reportPeriod === "all"
-                                            ? entries.filter((t) => t.kind === "out").reduce((s, t) => s + t.amount, 0)
-                                            : totalExpensesThisMonth,
-                                        currency
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Export CSV button - matching Figma workflow step 7-9! */}
-                        <button
-                            onClick={handleExportCSV}
-                            className="mt-4 w-full py-3 rounded-2xl bg-indigo-600 text-white font-bold text-xs shadow-md shadow-indigo-500/20 hover:bg-indigo-700 active:scale-98 transition flex items-center justify-center gap-2"
-                        >
-                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
-                            </svg>
-                            <span>Export as CSV (Excel / Sheets)</span>
-                        </button>
-                    </div>
-
-                    {/* Category Breakdown Graph in Reports */}
-                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                        <div className="text-base font-bold text-slate-900 mb-3">
-                            Category Distribution
-                        </div>
-                        <div className="space-y-3">
-                            {categorySpending.map((cat) => (
-                                <div key={cat.id} className="space-y-1">
-                                    <div className="flex justify-between text-xs font-semibold">
-                                        <span className="flex items-center gap-1.5">
-                                            <span>{cat.emoji}</span>
-                                            <span>{cat.name}</span>
-                                        </span>
-                                        <span className="tabular-nums font-bold">
-                                            {formatCurrency(cat.total, currency)} ({cat.percentage}%)
-                                        </span>
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            {/* Income Hero Card */}
+                            <div className="lg:col-span-4 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl p-6 text-white shadow-lg shadow-emerald-500/15 flex flex-col justify-between">
+                                <div>
+                                    <div className="text-xs font-semibold opacity-90 uppercase tracking-wider">
+                                        Total Recorded Income
                                     </div>
-                                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full rounded-full"
-                                            style={{
-                                                width: `${cat.percentage}%`,
-                                                backgroundColor: cat.color,
-                                            }}
-                                        />
+                                    <div className="text-4xl font-extrabold mt-2 tabular-nums">
+                                        {formatCurrency(totalIncome, currency)}
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* --- TAB 5: SETTINGS --- */}
-            {activeTab === "settings" && (
-                <div className="px-4 space-y-4 mt-3">
-                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                        <div className="text-base font-bold text-slate-900 mb-3">
-                            Budget & Currency
-                        </div>
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                                <div>
-                                    <div className="text-xs font-bold text-slate-800">Monthly Spending Budget</div>
-                                    <div className="text-[11px] text-slate-400">Target limit for monthly spending</div>
+                                <div className="mt-6 pt-4 border-t border-white/20 text-xs opacity-90">
+                                    {incomesList.length} transactions recorded for this client
                                 </div>
-                                <button
-                                    onClick={() => {
-                                        setEditBudgetInput(monthlyBudget.toString());
-                                        setShowBudgetModal(true);
-                                    }}
-                                    className="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-600 font-bold text-xs active:scale-95 transition"
-                                >
-                                    {formatCurrency(monthlyBudget, currency)} ✏️
-                                </button>
                             </div>
 
-                            <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                                <div>
-                                    <div className="text-xs font-bold text-slate-800">Currency Symbol</div>
-                                    <div className="text-[11px] text-slate-400">Default Philippine Peso (₱)</div>
+                            {/* Incomes List */}
+                            <div className="lg:col-span-8 bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                                <div className="text-base font-extrabold text-slate-900 mb-4">
+                                    Income Ledger & Sources
                                 </div>
-                                <div className="flex gap-1">
-                                    {["₱", "$", "€", "£"].map((sym) => (
+
+                                {incomesList.length === 0 ? (
+                                    <div className="text-center py-10 text-xs text-slate-400">
+                                        No income records logged yet.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {incomesList.map((item) => (
+                                            <div
+                                                key={item.income_id}
+                                                className="flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50/40 border border-emerald-100 hover:bg-emerald-50/70 transition"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-2xl bg-white text-emerald-600 shadow-xs flex items-center justify-center font-bold text-sm">
+                                                        ↓
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-xs font-bold text-slate-800">{item.source}</div>
+                                                        <div className="text-[10px] text-slate-400 font-medium">
+                                                            {formatDateDisplay(item.date)} {item.description ? `• ${item.description}` : ""}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-extrabold text-emerald-600 tabular-nums">
+                                                        +{formatCurrency(item.amount, currency)}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => openEditModal(item, "income")}
+                                                        className="p-1 text-slate-400 hover:text-indigo-600 transition text-xs"
+                                                        title="Edit income"
+                                                    >
+                                                        ✏️
+                                                    </button>
+                                                    <button
+                                                        onClick={() =>
+                                                            setDeleteCandidate({
+                                                                type: "income",
+                                                                id: item.income_id,
+                                                                name: item.source,
+                                                                amount: item.amount,
+                                                            })
+                                                        }
+                                                        className="p-1 text-slate-300 hover:text-rose-500 transition text-xs"
+                                                        title="Delete income"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* =====================================================================
+                    VIEW 4: BUDGETS (SRS SECTION 1.4 #3, 2.2.7, 2.2.8)
+                ===================================================================== */}
+                {activeTab === "budget" && (
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                                <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Personal Budgets</h1>
+                                <p className="text-xs text-slate-500 mt-1">Set spending limits for categories and monitor budget health</p>
+                            </div>
+                            <div className="px-4 py-2 bg-white rounded-2xl border border-slate-200 shadow-xs text-xs font-bold text-slate-700">
+                                Total Budget: <strong className="text-indigo-600">{formatCurrency(totalBudget, currency)}</strong>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {categoryReportData.map((cat) => {
+                                const isOverBudget = cat.actualSpent > cat.budgetAmount;
+                                const isNearLimit = !isOverBudget && cat.percentageUsed >= 80;
+
+                                return (
+                                    <div key={cat.category_id} className="bg-white rounded-3xl p-5 shadow-xs border border-slate-100 flex flex-col justify-between hover:shadow-md transition">
+                                        <div>
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div
+                                                        className="w-10 h-10 rounded-2xl flex items-center justify-center text-lg shadow-xs"
+                                                        style={{ backgroundColor: cat.bg, color: cat.color }}
+                                                    >
+                                                        {cat.emoji}
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-sm font-extrabold text-slate-900">{cat.category_name}</div>
+                                                        <div className="text-[10px] text-slate-400">Budget Limit: {formatCurrency(cat.budgetAmount, currency)}</div>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingBudgetCat(cat);
+                                                        setFormBudgetAmount(cat.budgetAmount.toString());
+                                                        setShowBudgetEditModal(true);
+                                                    }}
+                                                    className="px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600 text-xs font-bold transition"
+                                                >
+                                                    Set ✏️
+                                                </button>
+                                            </div>
+
+                                            <div className="mt-3">
+                                                <div className="flex justify-between text-xs font-bold mb-1.5">
+                                                    <span className="text-slate-600">Spent: {formatCurrency(cat.actualSpent, currency)}</span>
+                                                    <span className={isOverBudget ? "text-rose-600 font-extrabold" : "text-indigo-600"}>
+                                                        {cat.percentageUsed}%
+                                                    </span>
+                                                </div>
+                                                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                                                    <div
+                                                        className={`h-full rounded-full transition-all duration-500 ${
+                                                            isOverBudget
+                                                                ? "bg-rose-500"
+                                                                : isNearLimit
+                                                                ? "bg-amber-500"
+                                                                : "bg-indigo-600"
+                                                        }`}
+                                                        style={{ width: `${Math.min(100, cat.percentageUsed)}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                                            <span className="text-slate-500">
+                                                Remaining:{" "}
+                                                <strong className={cat.remaining < 0 ? "text-rose-600" : "text-slate-800"}>
+                                                    {cat.remaining < 0 ? "-" : ""}
+                                                    {formatCurrency(cat.remaining, currency)}
+                                                </strong>
+                                            </span>
+                                            <span>
+                                                {isOverBudget && <span className="text-rose-600 font-bold">⚠️ Exceeded</span>}
+                                                {isNearLimit && <span className="text-amber-600 font-bold">⚠️ High</span>}
+                                                {!isOverBudget && !isNearLimit && <span className="text-emerald-600 font-bold">✓ Good</span>}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* =====================================================================
+                    VIEW 5: SAVINGS (SRS SECTION 1.4 #5, 2.2.10)
+                ===================================================================== */}
+                {activeTab === "savings" && (
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                                <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Savings Tracker</h1>
+                                <p className="text-xs text-slate-500 mt-1">Record money set aside for emergency funds and long-term goals</p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setFormSavingsAmount("");
+                                    setFormSavingsDesc("");
+                                    setShowAddSavingsModal(true);
+                                }}
+                                className="px-5 py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-500/25 active:scale-95 transition"
+                            >
+                                + Record Savings
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            {/* Total Savings Hero Card */}
+                            <div className="lg:col-span-4 bg-gradient-to-br from-purple-600 to-indigo-700 rounded-3xl p-6 text-white shadow-lg shadow-purple-600/15 flex flex-col justify-between">
+                                <div>
+                                    <div className="text-xs font-semibold opacity-90 uppercase tracking-wider">
+                                        Total Recorded Savings
+                                    </div>
+                                    <div className="text-4xl font-extrabold mt-2 tabular-nums">
+                                        {formatCurrency(totalSavings, currency)}
+                                    </div>
+                                </div>
+                                <div className="mt-6 pt-4 border-t border-white/20 text-xs opacity-90">
+                                    {savingsList.length} savings records securely stored
+                                </div>
+                            </div>
+
+                            {/* Savings Entries List */}
+                            <div className="lg:col-span-8 bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                                <div className="text-base font-extrabold text-slate-900 mb-4">
+                                    Savings Ledger
+                                </div>
+
+                                {savingsList.length === 0 ? (
+                                    <div className="text-center py-10 text-xs text-slate-400">
+                                        No savings records logged yet.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {savingsList.map((item) => (
+                                            <div
+                                                key={item.savings_id}
+                                                className="flex items-center justify-between p-3.5 rounded-2xl bg-purple-50/40 border border-purple-100 hover:bg-purple-50/70 transition"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-2xl bg-white text-purple-600 shadow-xs flex items-center justify-center font-bold text-sm">
+                                                        💰
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-xs font-bold text-slate-800">
+                                                            {item.description || "Personal Savings"}
+                                                        </div>
+                                                        <div className="text-[10px] text-slate-400 font-medium">
+                                                            {formatDateDisplay(item.date)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-extrabold text-purple-700 tabular-nums">
+                                                        +{formatCurrency(item.amount, currency)}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => openEditModal(item, "savings")}
+                                                        className="p-1 text-slate-400 hover:text-indigo-600 transition text-xs"
+                                                        title="Edit savings"
+                                                    >
+                                                        ✏️
+                                                    </button>
+                                                    <button
+                                                        onClick={() =>
+                                                            setDeleteCandidate({
+                                                                type: "savings",
+                                                                id: item.savings_id,
+                                                                name: item.description || "Savings",
+                                                                amount: item.amount,
+                                                            })
+                                                        }
+                                                        className="p-1 text-slate-300 hover:text-rose-500 transition text-xs"
+                                                        title="Delete savings"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* =====================================================================
+                    VIEW 6: FINANCIAL SUMMARY (SRS SECTION 1.4 #7, 2.2.11 & 4.1)
+                ===================================================================== */}
+                {activeTab === "reports" && (
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                                <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Financial Summary</h1>
+                                <p className="text-xs text-slate-500 mt-1">Complete statement matching SRS Section 4.1 Specification</p>
+                            </div>
+                            <button
+                                onClick={handleExportCSV}
+                                className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/25 active:scale-95 transition flex items-center gap-2"
+                            >
+                                <span>📥</span>
+                                <span>Export Report (CSV)</span>
+                            </button>
+                        </div>
+
+                        {/* Statement Table matching SRS Section 4.1 */}
+                        <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                            <div className="text-base font-extrabold text-slate-900 mb-1">
+                                Example Personal Monthly Budget Statement
+                            </div>
+                            <div className="text-xs text-slate-400 mb-4">
+                                Structured overview of budget vs actual spending per category
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs text-left">
+                                    <thead>
+                                        <tr className="border-b border-slate-200 text-slate-400 uppercase text-[10px] font-bold">
+                                            <th className="py-3 px-3">Category</th>
+                                            <th className="py-3 px-3 text-right">Budget</th>
+                                            <th className="py-3 px-3 text-right">Actual Expense</th>
+                                            <th className="py-3 px-3 text-right">Remaining</th>
+                                            <th className="py-3 px-3 text-center">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {categoryReportData.map((row) => (
+                                            <tr key={row.category_id} className="hover:bg-slate-50/70 transition">
+                                                <td className="py-3.5 px-3 font-bold text-slate-800 flex items-center gap-2">
+                                                    <span>{row.emoji}</span>
+                                                    <span>{row.category_name}</span>
+                                                </td>
+                                                <td className="py-3.5 px-3 text-right tabular-nums text-slate-600">
+                                                    {formatCurrency(row.budgetAmount, currency)}
+                                                </td>
+                                                <td className="py-3.5 px-3 text-right tabular-nums font-bold text-slate-900">
+                                                    {formatCurrency(row.actualSpent, currency)}
+                                                </td>
+                                                <td
+                                                    className={`py-3.5 px-3 text-right tabular-nums font-extrabold ${
+                                                        row.remaining < 0 ? "text-rose-600" : "text-emerald-600"
+                                                    }`}
+                                                >
+                                                    {row.remaining < 0 ? "-" : ""}
+                                                    {formatCurrency(row.remaining, currency)}
+                                                </td>
+                                                <td className="py-3.5 px-3 text-center">
+                                                    {row.actualSpent > row.budgetAmount ? (
+                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
+                                                            Over Budget
+                                                        </span>
+                                                    ) : row.percentageUsed >= 80 ? (
+                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                                            Near Limit
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                            Healthy
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+
+                                        {/* Savings Row matching SRS 4.1 */}
+                                        <tr className="bg-purple-50/50 font-bold">
+                                            <td className="py-3.5 px-3 text-purple-900 flex items-center gap-2">
+                                                <span>💰</span>
+                                                <span>Savings</span>
+                                            </td>
+                                            <td className="py-3.5 px-3 text-right tabular-nums text-purple-800">
+                                                {formatCurrency(totalSavings, currency)}
+                                            </td>
+                                            <td className="py-3.5 px-3 text-right tabular-nums text-purple-800">
+                                                {formatCurrency(totalSavings, currency)}
+                                            </td>
+                                            <td className="py-3.5 px-3 text-right tabular-nums text-purple-800 font-extrabold">
+                                                ₱0.00
+                                            </td>
+                                            <td className="py-3.5 px-3 text-center">
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">
+                                                    Recorded
+                                                </span>
+                                            </td>
+                                        </tr>
+
+                                        {/* Total Row matching SRS 4.1 */}
+                                        <tr className="bg-slate-100 font-extrabold text-slate-900 text-sm">
+                                            <td className="py-4 px-3">TOTAL</td>
+                                            <td className="py-4 px-3 text-right tabular-nums">
+                                                {formatCurrency(totalBudget + totalSavings, currency)}
+                                            </td>
+                                            <td className="py-4 px-3 text-right tabular-nums">
+                                                {formatCurrency(totalExpenses + totalSavings, currency)}
+                                            </td>
+                                            <td className="py-4 px-3 text-right tabular-nums text-indigo-600 font-extrabold">
+                                                {formatCurrency(Math.max(0, totalBudget - totalExpenses), currency)}
+                                            </td>
+                                            <td className="py-4 px-3 text-center text-xs text-slate-500 font-semibold">
+                                                Balanced
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* Balance Formula Card */}
+                        <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                            <div className="text-base font-extrabold text-slate-900 mb-2">
+                                Cash Balance Equation (SRS Section 1.4 #4)
+                            </div>
+                            <div className="text-xs text-slate-500 mb-4">
+                                Remaining Balance = Total Income ({formatCurrency(totalIncome, currency)}) − Total Expenses ({formatCurrency(totalExpenses, currency)})
+                            </div>
+                            <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-between">
+                                <span className="text-sm font-bold text-indigo-900">Net Remaining Balance:</span>
+                                <span className="text-2xl font-extrabold text-indigo-700 tabular-nums">
+                                    {remainingBalance < 0 ? "-" : ""}
+                                    {formatCurrency(remainingBalance, currency)}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* =====================================================================
+                    VIEW 7: SETTINGS & CLIENT ACCOUNT (SRS SECTION 2.1.1, 2.2.1, 2.8)
+                ===================================================================== */}
+                {activeTab === "settings" && (
+                    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+                        <div>
+                            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Settings & Client Profile</h1>
+                            <p className="text-xs text-slate-500 mt-1">Manage client account, currency preferences, and database storage</p>
+                        </div>
+
+                        {/* Client Profile Card */}
+                        <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-base font-extrabold text-slate-900">
+                                    Client Account (Owner)
+                                </div>
+                                <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
+                                    ✓ Authorized Client
+                                </span>
+                            </div>
+                            <div className="space-y-3 text-xs">
+                                <div className="flex justify-between py-2 border-b border-slate-100">
+                                    <span className="text-slate-400">Client Name</span>
+                                    <span className="font-bold text-slate-800">{client?.name || "Maria (Mother)"}</span>
+                                </div>
+                                <div className="flex justify-between py-2 border-b border-slate-100">
+                                    <span className="text-slate-400">Login Username</span>
+                                    <span className="font-bold text-slate-800">{client?.username || "mother"}</span>
+                                </div>
+                                <div className="flex justify-between py-2">
+                                    <span className="text-slate-400">Security Password</span>
+                                    <span className="font-bold text-slate-400">•••••••• (Protected)</span>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowLoginModal(true)}
+                                className="mt-4 w-full py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+                            >
+                                Switch / Re-login Client Account
+                            </button>
+                        </div>
+
+                        {/* Currency Preference */}
+                        <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                            <div className="text-base font-extrabold text-slate-900 mb-3">
+                                System Currency (SRS 2.3.10)
+                            </div>
+                            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
+                                <div>
+                                    <div className="text-xs font-bold text-slate-800">Primary Currency</div>
+                                    <div className="text-[10px] text-slate-400">Default Philippine Peso (₱)</div>
+                                </div>
+                                <div className="flex gap-2">
+                                    {["₱", "$", "€", "¥"].map((sym) => (
                                         <button
                                             key={sym}
                                             onClick={async () => {
                                                 setCurrency(sym);
                                                 await saveCurrencyToDB(sym);
                                             }}
-                                            className={`w-8 h-8 rounded-xl text-xs font-bold transition ${
+                                            className={`w-9 h-9 rounded-xl text-xs font-bold transition ${
                                                 currency === sym
-                                                    ? "bg-indigo-600 text-white shadow-sm"
-                                                    : "bg-white text-slate-600 border border-slate-200"
+                                                    ? "bg-indigo-600 text-white shadow-xs"
+                                                    : "bg-white text-slate-700 border border-slate-200"
                                             }`}
                                         >
                                             {sym}
@@ -1067,85 +1661,56 @@ export default function PocketwiseApp() {
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    {/* Offline Storage & Sync Info */}
-                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                        <div className="text-base font-bold text-slate-900 mb-2">
-                            Offline Engine (Dexie IndexedDB)
-                        </div>
-                        <div className="text-xs text-slate-500 mb-4">
-                            All your data is saved offline on your device in Dexie IndexedDB. When online, pending data syncs seamlessly in the background.
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3 mb-4">
-                            <div className="p-3 bg-slate-50 rounded-2xl text-center">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase">Stored Entries</div>
-                                <div className="text-xl font-extrabold text-slate-800 mt-1">{entries.length}</div>
+                        {/* Database Diagnostics */}
+                        <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                            <div className="text-base font-extrabold text-slate-900 mb-2">
+                                Database Diagnostics (Dexie IndexedDB)
                             </div>
-                            <div className="p-3 bg-slate-50 rounded-2xl text-center">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase">Audit Records</div>
-                                <div className="text-xl font-extrabold text-slate-800 mt-1">{serverLogs.length}</div>
+                            <div className="text-xs text-slate-500 mb-4">
+                                Stores client personal financial records offline in Dexie IndexedDB according to SRS Section 2.5.
                             </div>
+                            <div className="grid grid-cols-3 gap-3 mb-4 text-center">
+                                <div className="p-3 bg-slate-50 rounded-2xl">
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase">Expenses</div>
+                                    <div className="text-lg font-extrabold text-slate-800 mt-1">{expensesList.length}</div>
+                                </div>
+                                <div className="p-3 bg-slate-50 rounded-2xl">
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase">Incomes</div>
+                                    <div className="text-lg font-extrabold text-slate-800 mt-1">{incomesList.length}</div>
+                                </div>
+                                <div className="p-3 bg-slate-50 rounded-2xl">
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase">Savings</div>
+                                    <div className="text-lg font-extrabold text-slate-800 mt-1">{savingsList.length}</div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={async () => {
+                                    if (confirm("Reset database to initial screenshot and SRS demonstration data?")) {
+                                        await resetDatabaseToDemo();
+                                        await refreshAllData();
+                                    }
+                                }}
+                                className="w-full py-2.5 rounded-xl border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition"
+                            >
+                                Reset & Load Initial Sample Data
+                            </button>
                         </div>
-
-                        <button
-                            onClick={handleManualSync}
-                            className="w-full py-2.5 rounded-xl border border-indigo-200 text-indigo-600 text-xs font-bold hover:bg-indigo-50 active:scale-98 transition flex items-center justify-center gap-1.5"
-                        >
-                            <span>🔄</span>
-                            <span>Force Cloud Sync Now</span>
-                        </button>
                     </div>
+                )}
+            </main>
 
-                    {/* Device & Hardware Info */}
-                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                        <div className="text-base font-bold text-slate-900 mb-2">
-                            Hardware Optimization
-                        </div>
-                        <div className="text-xs text-slate-500 space-y-1">
-                            <div>• Device: <span className="font-semibold text-slate-700">OPPO A9 2020 (CPH1937)</span></div>
-                            <div>• Chipset: <span className="font-semibold text-slate-700">Snapdragon 665 / Android 11</span></div>
-                            <div>• Architecture: <span className="font-semibold text-slate-700">Offline-First IndexedDB + Service Worker</span></div>
-                        </div>
-                        <button
-                            onClick={handleSeedDemoData}
-                            className="mt-4 w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold active:scale-98 transition"
-                        >
-                            ⚡ Seed Demonstration Transactions
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Floating Action Buttons (Home screen) */}
-            {activeTab === "home" && (
-                <div className="fixed bottom-24 right-4 sm:right-6 flex flex-col items-end gap-2.5 z-30">
-                    <button
-                        onClick={() => openAddTransaction("in")}
-                        className="bg-white/95 backdrop-blur text-indigo-600 border border-indigo-200 shadow-md font-bold text-xs px-4 py-2.5 rounded-full hover:shadow-lg transition active:scale-95 flex items-center gap-1.5"
-                    >
-                        <span>+</span>
-                        <span>Add income</span>
-                    </button>
-
-                    <button
-                        onClick={() => openAddTransaction("out")}
-                        className="w-14 h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-600/30 flex items-center justify-center text-3xl font-light transition active:scale-90"
-                        title="Add expense"
-                    >
-                        +
-                    </button>
-                </div>
-            )}
-
-            {/* --- BOTTOM NAVIGATION BAR (MATCHES FIGMA) --- */}
-            <div className="fixed bottom-3 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-sm bg-[#161B2E] text-white rounded-3xl p-2 px-3 shadow-2xl flex items-center justify-between z-40">
+            {/* =========================================================================
+                MOBILE BOTTOM NAVIGATION BAR (FOR SCREENS < 768px)
+            ========================================================================= */}
+            <div className="md:hidden fixed bottom-3 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-sm bg-[#161B2E] text-white rounded-3xl p-1.5 px-2 shadow-2xl flex items-center justify-between z-40">
                 {/* 1. Home */}
                 <button
                     onClick={() => setActiveTab("home")}
                     className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition active:scale-95 ${
-                        activeTab === "home" ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/30" : "text-slate-400 hover:text-white"
+                        activeTab === "home"
+                            ? "bg-[#6366F1] text-white shadow-md shadow-indigo-500/30"
+                            : "text-slate-400 hover:text-white"
                     }`}
                 >
                     <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
@@ -1158,33 +1723,35 @@ export default function PocketwiseApp() {
                 <button
                     onClick={() => setActiveTab("income")}
                     className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition active:scale-95 ${
-                        activeTab === "income" ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/30" : "text-slate-400 hover:text-white"
+                        activeTab === "income"
+                            ? "bg-[#6366F1] text-white shadow-md shadow-indigo-500/30"
+                            : "text-slate-400 hover:text-white"
                     }`}
                 >
-                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" transform="rotate(180 12 12)" />
-                    </svg>
+                    <span className="text-base font-bold">₱</span>
                     <span className="text-[10px] font-bold mt-0.5">Income</span>
                 </button>
 
-                {/* 3. Expenses */}
+                {/* 3. Expenses (HIGHLIGHTED IN PURPLE CAPSULE) */}
                 <button
                     onClick={() => setActiveTab("expenses")}
-                    className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition active:scale-95 ${
-                        activeTab === "expenses" ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/30" : "text-slate-400 hover:text-white"
+                    className={`flex flex-col items-center justify-center py-1.5 px-3.5 rounded-2xl transition active:scale-95 ${
+                        activeTab === "expenses"
+                            ? "bg-[#6366F1] text-white shadow-md shadow-indigo-500/30"
+                            : "text-slate-400 hover:text-white"
                     }`}
                 >
-                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
-                    </svg>
+                    <span className="text-base font-bold">💳</span>
                     <span className="text-[10px] font-bold mt-0.5">Expenses</span>
                 </button>
 
-                {/* 4. Reports */}
+                {/* 4. Reports / Summary */}
                 <button
                     onClick={() => setActiveTab("reports")}
                     className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition active:scale-95 ${
-                        activeTab === "reports" ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/30" : "text-slate-400 hover:text-white"
+                        activeTab === "reports" || activeTab === "budget" || activeTab === "savings"
+                            ? "bg-[#6366F1] text-white shadow-md shadow-indigo-500/30"
+                            : "text-slate-400 hover:text-white"
                     }`}
                 >
                     <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
@@ -1197,7 +1764,9 @@ export default function PocketwiseApp() {
                 <button
                     onClick={() => setActiveTab("settings")}
                     className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition active:scale-95 ${
-                        activeTab === "settings" ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/30" : "text-slate-400 hover:text-white"
+                        activeTab === "settings"
+                            ? "bg-[#6366F1] text-white shadow-md shadow-indigo-500/30"
+                            : "text-slate-400 hover:text-white"
                     }`}
                 >
                     <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
@@ -1206,285 +1775,632 @@ export default function PocketwiseApp() {
                     <span className="text-[10px] font-bold mt-0.5">Settings</span>
                 </button>
             </div>
-        </div>
-    );
 
-    return (
-        <div className="min-h-screen bg-[#E5E9F2] text-slate-800 flex flex-col items-center justify-start p-0 sm:py-6">
-            {/* Desktop Screen Switcher Toolbar */}
-            <div className="hidden sm:flex items-center gap-3 mb-4 px-4 py-2 bg-white/80 backdrop-blur rounded-2xl border border-slate-200 shadow-sm text-xs font-semibold text-slate-700">
-                <span className="flex items-center gap-1.5 text-indigo-600">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    OPPO A9 2020 Optimized
-                </span>
-                <span className="text-slate-300">|</span>
-                <button
-                    onClick={() => setUsePhoneFrame(!usePhoneFrame)}
-                    className="hover:text-indigo-600 transition"
-                >
-                    {usePhoneFrame ? "📱 Mobile Shell View (Figma)" : "💻 Expanded Screen View"}
-                </button>
-            </div>
+            {/* Mobile Floating Action Buttons for Expenses */}
+            {activeTab === "expenses" && (
+                <div className="md:hidden fixed bottom-24 right-4 flex flex-col items-end gap-2.5 z-30">
+                    <button
+                        onClick={() => {
+                            setFormIncomeAmount("");
+                            setFormIncomeDesc("");
+                            setShowAddIncomeModal(true);
+                        }}
+                        className="bg-white/95 backdrop-blur text-[#6366F1] border border-indigo-100 shadow-md font-extrabold text-xs px-4 py-2.5 rounded-full hover:shadow-lg transition active:scale-95 flex items-center gap-1.5"
+                    >
+                        <span>↓</span>
+                        <span>Add income</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setFormExpenseName("");
+                            setFormExpenseAmount("");
+                            setFormExpenseDesc("");
+                            setFormExpenseCategory(
+                                selectedExpenseCategory !== "all" ? selectedExpenseCategory : "food"
+                            );
+                            setShowAddExpenseModal(true);
+                        }}
+                        className="w-14 h-14 rounded-2xl bg-[#6366F1] hover:bg-indigo-700 text-white shadow-xl shadow-indigo-600/35 flex items-center justify-center text-3xl font-light transition active:scale-90"
+                    >
+                        +
+                    </button>
+                </div>
+            )}
 
-            {/* Responsive Container: Either Phone Frame or Full Container */}
-            <div
-                className={`w-full bg-[#F4F5FA] relative overflow-hidden transition-all duration-300 ${
-                    usePhoneFrame
-                        ? "sm:max-w-[412px] sm:rounded-[48px] sm:border-[9px] sm:border-[#1C2333] sm:shadow-2xl sm:min-h-[860px]"
-                        : "max-w-2xl sm:rounded-3xl sm:shadow-xl sm:border border-slate-200"
-                }`}
-            >
-                {/* Smartphone Dynamic Island / Camera Punch Hole (in Phone Frame mode) */}
-                {usePhoneFrame && (
-                    <div className="hidden sm:flex items-center justify-between px-7 pt-3 pb-1 select-none">
-                        <span className="text-xs font-bold text-slate-800">10:40</span>
-                        {/* Dynamic Island Pill */}
-                        <div className="w-24 h-5 rounded-full bg-black flex items-center justify-end pr-2 gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-slate-900 border border-slate-800" />
-                        </div>
-                        <div className="flex items-center gap-1 text-[11px] font-bold text-slate-800">
-                            <span>5G</span>
-                            <span>📶</span>
-                            <span>🔋</span>
-                        </div>
-                    </div>
-                )}
-
-                {/* Main Content */}
-                {appBody}
-
-                {/* MODAL 1: ADD TRANSACTION KEYPAD */}
-                {showKeypad && (
-                    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-xs animate-fade-in">
-                        <div className="w-full max-w-sm sm:max-w-[412px] bg-white rounded-t-3xl p-5 pb-8 shadow-2xl animate-slide-up border-t border-slate-100">
-                            {/* Type Toggle: Expense vs Income */}
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex p-1 bg-slate-100 rounded-2xl w-48">
-                                    <button
-                                        onClick={() => {
-                                            setKeypadType("out");
-                                            setSelectedCategory(DEFAULT_CATEGORIES[0]);
-                                        }}
-                                        className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition ${
-                                            keypadType === "out" ? "bg-rose-500 text-white shadow-sm" : "text-slate-600"
-                                        }`}
-                                    >
-                                        Expense
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setKeypadType("in");
-                                            setSelectedCategory(INCOME_CATEGORIES[0]);
-                                        }}
-                                        className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition ${
-                                            keypadType === "in" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600"
-                                        }`}
-                                    >
-                                        Income
-                                    </button>
-                                </div>
-                                <button
-                                    onClick={() => setShowKeypad(false)}
-                                    className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-sm"
-                                >
-                                    ✕
-                                </button>
+            {/* =========================================================================
+                MODALS: ADD EXPENSE, ADD INCOME, ADD SAVINGS, EDIT, DELETE, LOGIN
+            ========================================================================= */}
+            {/* Modal: Add Expense */}
+            {showAddExpenseModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fade-in">
+                    <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl animate-slide-up">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div>
+                                <div className="text-base font-extrabold text-slate-900">Add Expense</div>
+                                <div className="text-xs text-slate-400">Record a new personal expense</div>
                             </div>
-
-                            {/* Amount Display */}
-                            <div className="text-center my-3">
-                                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                                    {selectedCategory.name}
-                                </div>
-                                <div className="text-4xl font-extrabold text-slate-900 mt-1 tabular-nums">
-                                    {currency}{keypadValue === "" ? "0.00" : keypadValue}
-                                </div>
-                            </div>
-
-                            {/* Category Selector Chips */}
-                            <div className="flex gap-2 overflow-x-auto py-2 px-1 mb-3 scrollbar-none">
-                                {(keypadType === "in" ? INCOME_CATEGORIES : DEFAULT_CATEGORIES).map((cat) => (
-                                    <button
-                                        key={cat.id}
-                                        onClick={() => setSelectedCategory(cat)}
-                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition ${
-                                            selectedCategory.id === cat.id
-                                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
-                                                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                                        }`}
-                                    >
-                                        <span>{cat.emoji}</span>
-                                        <span>{cat.name.replace(" Expenses", "")}</span>
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* Note field */}
-                            <div className="mb-3">
-                                <input
-                                    type="text"
-                                    placeholder="Optional note / memo..."
-                                    value={keypadNote}
-                                    onChange={(e) => setKeypadNote(e.target.value)}
-                                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                />
-                            </div>
-
-                            {/* Numeric Keypad */}
-                            <div className="grid grid-cols-3 gap-2 mb-3">
-                                {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "back"].map((d) => (
-                                    <button
-                                        key={d}
-                                        onClick={() => {
-                                            if (d === "back") {
-                                                setKeypadValue((v) => v.slice(0, -1));
-                                            } else if (d === "." && keypadValue.includes(".")) {
-                                                return;
-                                            } else if (keypadValue.length < 8) {
-                                                setKeypadValue((v) => v + d);
-                                            }
-                                        }}
-                                        className="h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-lg font-bold text-slate-800 flex items-center justify-center transition"
-                                    >
-                                        {d === "back" ? "⌫" : d}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* Submit Button */}
                             <button
-                                onClick={handleSaveTransaction}
-                                disabled={!keypadValue || parseFloat(keypadValue) <= 0}
-                                className={`w-full py-3.5 rounded-2xl font-bold text-sm shadow-md transition active:scale-98 ${
-                                    keypadType === "in"
-                                        ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/25"
-                                        : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-500/25"
-                                } disabled:opacity-40 disabled:cursor-not-allowed`}
+                                onClick={() => setShowAddExpenseModal(false)}
+                                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm"
                             >
-                                Confirm {keypadType === "in" ? "Income" : "Expense"}
+                                ✕
                             </button>
                         </div>
-                    </div>
-                )}
 
-                {/* MODAL 2: EDIT BUDGET TARGET */}
-                {showBudgetModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in">
-                        <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl">
-                            <div className="text-base font-bold text-slate-900 mb-1">
-                                Set Monthly Budget
+                        {formExpenseError && (
+                            <div className="mt-3 p-2 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold">
+                                {formExpenseError}
                             </div>
-                            <div className="text-xs text-slate-400 mb-4">
-                                Enter your target monthly spending plan.
-                            </div>
-                            <div className="relative mb-4">
-                                <span className="absolute left-3.5 top-2.5 font-bold text-slate-400">
-                                    {currency}
-                                </span>
+                        )}
+
+                        <form onSubmit={handleAddExpenseSubmit} className="mt-4 space-y-3.5">
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 block mb-1">
+                                    Expense Name / Item *
+                                </label>
                                 <input
-                                    type="number"
-                                    value={editBudgetInput}
-                                    onChange={(e) => setEditBudgetInput(e.target.value)}
-                                    className="w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    type="text"
+                                    placeholder="e.g. Electric bill, Weekly groceries, Fuel"
+                                    value={formExpenseName}
+                                    onChange={(e) => setFormExpenseName(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    required
                                     autoFocus
                                 />
                             </div>
-                            <div className="flex gap-2">
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 block mb-1">
+                                    Category (SRS Section 2.5) *
+                                </label>
+                                <select
+                                    value={formExpenseCategory}
+                                    onChange={(e) => setFormExpenseCategory(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    {categories.map((cat) => (
+                                        <option key={cat.category_id} value={cat.category_id}>
+                                            {cat.emoji} {cat.category_name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                                        Amount (₱) *
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="0.00"
+                                        value={formExpenseAmount}
+                                        onChange={(e) => setFormExpenseAmount(e.target.value)}
+                                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                                        Date *
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={formExpenseDate}
+                                        onChange={(e) => setFormExpenseDate(e.target.value)}
+                                        className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 block mb-1">
+                                    Description (Optional)
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="Additional memo"
+                                    value={formExpenseDesc}
+                                    onChange={(e) => setFormExpenseDesc(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
                                 <button
-                                    onClick={() => setShowBudgetModal(false)}
+                                    type="button"
+                                    onClick={() => setShowAddExpenseModal(false)}
                                     className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs"
                                 >
                                     Cancel
                                 </button>
                                 <button
-                                    onClick={handleSaveBudget}
-                                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-md shadow-indigo-500/25"
+                                    type="submit"
+                                    className="flex-1 py-2.5 rounded-xl bg-[#6366F1] text-white font-bold text-xs shadow-md shadow-indigo-500/25 active:scale-95 transition"
                                 >
-                                    Save
+                                    Save Expense
                                 </button>
                             </div>
-                        </div>
+                        </form>
                     </div>
-                )}
+                </div>
+            )}
 
-                {/* DRAWER: NOTIFICATIONS & AUDIT TRAIL */}
-                {showNotificationDrawer && (
-                    <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs animate-fade-in">
-                        <div className="w-full max-w-xs bg-white h-full p-5 flex flex-col shadow-2xl animate-slide-up">
-                            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                                <div>
-                                    <div className="text-base font-bold text-slate-900">Activity & Sync</div>
-                                    <div className="text-xs text-slate-400">Local audit records</div>
-                                </div>
-                                <button
-                                    onClick={() => setShowNotificationDrawer(false)}
-                                    className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm"
+            {/* Modal: Add Income */}
+            {showAddIncomeModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fade-in">
+                    <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl animate-slide-up">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div>
+                                <div className="text-base font-extrabold text-slate-900">Add Income</div>
+                                <div className="text-xs text-slate-400">Record money received</div>
+                            </div>
+                            <button
+                                onClick={() => setShowAddIncomeModal(false)}
+                                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {formIncomeError && (
+                            <div className="mt-3 p-2 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold">
+                                {formIncomeError}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleAddIncomeSubmit} className="mt-4 space-y-3.5">
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 block mb-1">
+                                    Income Source (SRS 1.4 #1) *
+                                </label>
+                                <select
+                                    value={formIncomeSource}
+                                    onChange={(e) => setFormIncomeSource(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 >
-                                    ✕
-                                </button>
+                                    {INCOME_SOURCES.map((s) => (
+                                        <option key={s.id} value={s.name}>
+                                            {s.emoji} {s.name}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
 
-                            {/* Deleted entries restore section */}
-                            {deletedHistory.length > 0 && (
-                                <div className="mt-3 p-3 rounded-2xl bg-amber-50 border border-amber-200/70">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-xs font-bold text-amber-800">
-                                            Deleted Items ({deletedHistory.length})
-                                        </span>
-                                        <button
-                                            onClick={async () => {
-                                                await clearAllDeletedFromDB();
-                                                await refreshData();
-                                            }}
-                                            className="text-[10px] text-amber-700 underline font-semibold"
-                                        >
-                                            Clear all
-                                        </button>
-                                    </div>
-                                    <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                                        {deletedHistory.map((d) => (
-                                            <div key={d.id} className="flex items-center justify-between text-xs bg-white p-1.5 rounded-lg border border-amber-100">
-                                                <span className="truncate max-w-[120px] font-medium text-slate-700">
-                                                    {d.emoji} {d.name}
-                                                </span>
-                                                <button
-                                                    onClick={() => handleRestoreTransaction(d.id)}
-                                                    className="text-[10px] font-bold text-indigo-600 hover:underline"
-                                                >
-                                                    Restore
-                                                </button>
-                                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                                        Amount (₱) *
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="0.00"
+                                        value={formIncomeAmount}
+                                        onChange={(e) => setFormIncomeAmount(e.target.value)}
+                                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        required
+                                        autoFocus
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                                        Date *
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={formIncomeDate}
+                                        onChange={(e) => setFormIncomeDate(e.target.value)}
+                                        className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 block mb-1">
+                                    Description / Memo
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. October Salary payout"
+                                    value={formIncomeDesc}
+                                    onChange={(e) => setFormIncomeDesc(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddIncomeModal(false)}
+                                    className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow-md shadow-emerald-500/25 active:scale-95 transition"
+                                >
+                                    Save Income
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: Add Savings */}
+            {showAddSavingsModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fade-in">
+                    <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl animate-slide-up">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div>
+                                <div className="text-base font-extrabold text-slate-900">Record Savings</div>
+                                <div className="text-xs text-slate-400">Put money aside for future use</div>
+                            </div>
+                            <button
+                                onClick={() => setShowAddSavingsModal(false)}
+                                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {formSavingsError && (
+                            <div className="mt-3 p-2 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold">
+                                {formSavingsError}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleAddSavingsSubmit} className="mt-4 space-y-3.5">
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                                        Amount (₱) *
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="0.00"
+                                        value={formSavingsAmount}
+                                        onChange={(e) => setFormSavingsAmount(e.target.value)}
+                                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        required
+                                        autoFocus
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                                        Date *
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={formSavingsDate}
+                                        onChange={(e) => setFormSavingsDate(e.target.value)}
+                                        className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 block mb-1">
+                                    Description / Purpose
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Emergency fund, House renovation"
+                                    value={formSavingsDesc}
+                                    onChange={(e) => setFormSavingsDesc(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddSavingsModal(false)}
+                                    className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-2.5 rounded-xl bg-purple-600 text-white font-bold text-xs shadow-md shadow-purple-500/25 active:scale-95 transition"
+                                >
+                                    Save Savings
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: Edit Transaction (SRS 2.2.5) */}
+            {showEditModal && editingItem && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fade-in">
+                    <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl animate-slide-up">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div>
+                                <div className="text-base font-extrabold text-slate-900">
+                                    Edit {editingItem.type === "expense" ? "Expense" : editingItem.type === "income" ? "Income" : "Savings"}
+                                </div>
+                                <div className="text-xs text-slate-400">Update record details</div>
+                            </div>
+                            <button
+                                onClick={() => setShowEditModal(false)}
+                                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="mt-4 space-y-3.5">
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 block mb-1">
+                                    Title / Name *
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editingItem.data.name}
+                                    onChange={(e) =>
+                                        setEditingItem({
+                                            ...editingItem,
+                                            data: { ...editingItem.data, name: e.target.value },
+                                        })
+                                    }
+                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    required
+                                />
+                            </div>
+
+                            {editingItem.type === "expense" && (
+                                <div>
+                                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                                        Category
+                                    </label>
+                                    <select
+                                        value={editingItem.data.category_id}
+                                        onChange={(e) =>
+                                            setEditingItem({
+                                                ...editingItem,
+                                                data: { ...editingItem.data, category_id: e.target.value },
+                                            })
+                                        }
+                                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900"
+                                    >
+                                        {categories.map((cat) => (
+                                            <option key={cat.category_id} value={cat.category_id}>
+                                                {cat.emoji} {cat.category_name}
+                                            </option>
                                         ))}
-                                    </div>
+                                    </select>
                                 </div>
                             )}
 
-                            {/* Audit Logs list */}
-                            <div className="flex-1 overflow-y-auto mt-4 space-y-2.5">
-                                <div className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                                    System Log History
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                                        Amount (₱) *
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={editingItem.data.amount}
+                                        onChange={(e) =>
+                                            setEditingItem({
+                                                ...editingItem,
+                                                data: { ...editingItem.data, amount: e.target.value },
+                                            })
+                                        }
+                                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900"
+                                        required
+                                    />
                                 </div>
-                                {serverLogs.length === 0 ? (
-                                    <div className="text-xs text-slate-400 py-4 text-center">
-                                        No audit events recorded.
-                                    </div>
-                                ) : (
-                                    serverLogs.slice(0, 15).map((log) => (
-                                        <div key={log.logId} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
-                                            <div className="font-bold text-slate-800 text-[11px]">
-                                                {log.action.replace(/_/g, " ")}
-                                            </div>
-                                            <div className="text-[10px] text-slate-400 mt-0.5">
-                                                {formatDate(log.timestamp)}
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                                        Date *
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={editingItem.data.date}
+                                        onChange={(e) =>
+                                            setEditingItem({
+                                                ...editingItem,
+                                                data: { ...editingItem.data, date: e.target.value },
+                                            })
+                                        }
+                                        className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 block mb-1">
+                                    Description
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editingItem.data.description}
+                                    onChange={(e) =>
+                                        setEditingItem({
+                                            ...editingItem,
+                                            data: { ...editingItem.data, description: e.target.value },
+                                        })
+                                    }
+                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900"
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowEditModal(false)}
+                                    className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveEditSubmit}
+                                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-md shadow-indigo-500/25 active:scale-95 transition"
+                                >
+                                    Update Record
+                                </button>
                             </div>
                         </div>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
+
+            {/* Modal: Delete Confirmation (SRS 2.2.6 & 2.3.9) */}
+            {deleteCandidate && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+                    <div className="w-full max-w-xs bg-white rounded-3xl p-6 shadow-2xl text-center animate-slide-up">
+                        <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl mx-auto mb-3">
+                            🗑️
+                        </div>
+                        <div className="text-base font-extrabold text-slate-900">
+                            Confirm Deletion
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">
+                            Are you sure you want to delete{" "}
+                            <strong className="text-slate-800">&apos;{deleteCandidate.name}&apos;</strong> (
+                            {formatCurrency(deleteCandidate.amount, currency)})?
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setDeleteCandidate(null)}
+                                className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={executeDelete}
+                                className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white font-bold text-xs shadow-md shadow-rose-500/25 active:scale-95 transition"
+                            >
+                                Yes, Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: Set Category Budget (SRS 2.2.7) */}
+            {showBudgetEditModal && editingBudgetCat && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fade-in">
+                    <div className="w-full max-w-xs bg-white rounded-3xl p-6 shadow-2xl">
+                        <div className="text-base font-bold text-slate-900 mb-1">
+                            Set {editingBudgetCat.category_name} Budget
+                        </div>
+                        <div className="text-xs text-slate-400 mb-3">
+                            Set your monthly target spending limit.
+                        </div>
+
+                        <div className="relative mb-4">
+                            <span className="absolute left-3.5 top-2.5 font-bold text-slate-400">
+                                {currency}
+                            </span>
+                            <input
+                                type="number"
+                                value={formBudgetAmount}
+                                onChange={(e) => setFormBudgetAmount(e.target.value)}
+                                className="w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                autoFocus
+                            />
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setShowBudgetEditModal(false)}
+                                className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveCategoryBudget}
+                                className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-md shadow-indigo-500/25"
+                            >
+                                Save Limit
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: Client Login (SRS 2.2.1) */}
+            {showLoginModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fade-in">
+                    <div className="w-full max-w-xs bg-white rounded-3xl p-6 shadow-2xl">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div>
+                                <div className="text-base font-extrabold text-slate-900">Client Login</div>
+                                <div className="text-xs text-slate-400">SRS Section 2.2.1 Verification</div>
+                            </div>
+                            <button
+                                onClick={() => setShowLoginModal(false)}
+                                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {loginError && (
+                            <div className="mt-3 p-2 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold">
+                                {loginError}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleLoginSubmit} className="mt-4 space-y-3">
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 block mb-1">
+                                    Username
+                                </label>
+                                <input
+                                    type="text"
+                                    value={loginUsername}
+                                    onChange={(e) => setLoginUsername(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 block mb-1">
+                                    Password (Masked - SRS 2.8.1)
+                                </label>
+                                <input
+                                    type="password"
+                                    value={loginPassword}
+                                    onChange={(e) => setLoginPassword(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    required
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowLoginModal(false)}
+                                    className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-md shadow-indigo-500/25"
+                                >
+                                    Log In
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

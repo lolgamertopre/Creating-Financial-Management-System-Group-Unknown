@@ -1,7 +1,7 @@
 {
-  "name": "Pocketwise - Expense & Financial Tracker",
-  "short_name": "Pocketwise",
-  "description": "Lightweight, offline-first expense tracking and budget management app optimized for mobile devices.",
+  "name": "Web-Based Personal Budget Tracker",
+  "short_name": "BudgetTracker",
+  "description": "Web-Based Personal Budget Tracker - Income, Expense, Budget, and Savings Management.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F0F2F8",
