@@ -1,0 +1,215 @@
+{
+  "client": {
+    "client_id": "client_1",
+    "name": "Maria (Client / Mother)",
+    "username": "mother",
+    "password": "password123",
+    "email": "maria.budget@pocketwise.ph",
+    "monthlyTargetSavings": 5000,
+    "currency": "₱"
+  },
+  "categories": [
+    {
+      "category_id": "food",
+      "category_name": "Food",
+      "emoji": "🛒",
+      "color": "#F97316",
+      "defaultBudget": 5000
+    },
+    {
+      "category_id": "transport",
+      "category_name": "Transportation",
+      "emoji": "🚌",
+      "color": "#06B6D4",
+      "defaultBudget": 2000
+    },
+    {
+      "category_id": "bills",
+      "category_name": "Bills",
+      "emoji": "⚡",
+      "color": "#EF4444",
+      "defaultBudget": 3000
+    },
+    {
+      "category_id": "medicine",
+      "category_name": "Medicine",
+      "emoji": "💊",
+      "color": "#10B981",
+      "defaultBudget": 1500
+    },
+    {
+      "category_id": "shopping",
+      "category_name": "Shopping",
+      "emoji": "🛍️",
+      "color": "#8B5CF6",
+      "defaultBudget": 1500
+    },
+    {
+      "category_id": "personal",
+      "category_name": "Personal Needs",
+      "emoji": "🧴",
+      "color": "#EC4899",
+      "defaultBudget": 2000
+    },
+    {
+      "category_id": "others",
+      "category_name": "Others",
+      "emoji": "🏷️",
+      "color": "#64748B",
+      "defaultBudget": 1000
+    }
+  ],
+  "expenses": [
+    {
+      "expense_id": 101,
+      "client_id": "client_1",
+      "category_id": "bills",
+      "name": "Electric bill",
+      "amount": 2450,
+      "date": "2026-10-04T06:30:00.000Z",
+      "description": "Meralco electricity bill payment",
+      "isDeleted": 0,
+      "syncStatus": "synced",
+      "updatedAt": "2026-10-07T12:14:32.085Z"
+    },
+    {
+      "expense_id": 102,
+      "client_id": "client_1",
+      "category_id": "food",
+      "name": "Weekly groceries",
+      "amount": 860,
+      "date": "2026-10-03T03:15:00.000Z",
+      "description": "Supermarket vegetables and rice",
+      "isDeleted": 0,
+      "syncStatus": "synced",
+      "updatedAt": "2026-10-07T12:14:32.085Z"
+    },
+    {
+      "expense_id": 103,
+      "client_id": "client_1",
+      "category_id": "transport",
+      "name": "Fuel",
+      "amount": 320,
+      "date": "2026-10-02T00:45:00.000Z",
+      "description": "Gasoline for family vehicle",
+      "isDeleted": 0,
+      "syncStatus": "synced",
+      "updatedAt": "2026-10-07T12:14:32.085Z"
+    },
+    {
+      "expense_id": 104,
+      "client_id": "client_1",
+      "category_id": "shopping",
+      "name": "Household items",
+      "amount": 550,
+      "date": "2026-10-01T08:20:00.000Z",
+      "description": "Cleaning supplies and toiletries",
+      "isDeleted": 0,
+      "syncStatus": "synced",
+      "updatedAt": "2026-10-07T12:14:32.085Z"
+    }
+  ],
+  "incomes": [
+    {
+      "income_id": 201,
+      "client_id": "client_1",
+      "source": "Salary",
+      "amount": 15000,
+      "date": "2026-10-01T01:00:00.000Z",
+      "description": "Primary monthly salary payout",
+      "isDeleted": 0,
+      "syncStatus": "synced",
+      "updatedAt": "2026-10-07T12:14:32.085Z"
+    },
+    {
+      "income_id": 202,
+      "client_id": "client_1",
+      "source": "Business income",
+      "amount": 5000,
+      "date": "2026-10-03T07:00:00.000Z",
+      "description": "Online store earnings",
+      "isDeleted": 0,
+      "syncStatus": "synced",
+      "updatedAt": "2026-10-07T12:14:32.085Z"
+    }
+  ],
+  "budgets": [
+    {
+      "budget_id": "budget_food_2026-10",
+      "client_id": "client_1",
+      "category_id": "food",
+      "budget_amount": 5000,
+      "month": "2026-10"
+    },
+    {
+      "budget_id": "budget_transport_2026-10",
+      "client_id": "client_1",
+      "category_id": "transport",
+      "budget_amount": 2000,
+      "month": "2026-10"
+    },
+    {
+      "budget_id": "budget_bills_2026-10",
+      "client_id": "client_1",
+      "category_id": "bills",
+      "budget_amount": 3000,
+      "month": "2026-10"
+    },
+    {
+      "budget_id": "budget_medicine_2026-10",
+      "client_id": "client_1",
+      "category_id": "medicine",
+      "budget_amount": 1500,
+      "month": "2026-10"
+    },
+    {
+      "budget_id": "budget_shopping_2026-10",
+      "client_id": "client_1",
+      "category_id": "shopping",
+      "budget_amount": 1500,
+      "month": "2026-10"
+    },
+    {
+      "budget_id": "budget_personal_2026-10",
+      "client_id": "client_1",
+      "category_id": "personal",
+      "budget_amount": 2000,
+      "month": "2026-10"
+    },
+    {
+      "budget_id": "budget_others_2026-10",
+      "client_id": "client_1",
+      "category_id": "others",
+      "budget_amount": 1000,
+      "month": "2026-10"
+    }
+  ],
+  "savings": [
+    {
+      "savings_id": 301,
+      "owner_id": "client_1",
+      "amount": 3000,
+      "date": "2026-10-02T02:00:00.000Z",
+      "description": "Emergency fund allocation",
+      "isDeleted": 0,
+      "syncStatus": "synced",
+      "updatedAt": "2026-10-07T12:14:32.085Z"
+    }
+  ],
+  "auditLogs": [
+    {
+      "logId": "SRV-INIT-001",
+      "action": "SYSTEM_INITIALIZED",
+      "details": {
+        "info": "Backend REST API Server Database Ready"
+      },
+      "timestamp": "2026-10-07T12:14:32.085Z",
+      "syncStatus": "synced"
+    }
+  ],
+  "metadata": {
+    "version": "2.0.0",
+    "lastUpdated": "2026-10-07T12:14:32.085Z",
+    "currencySymbol": "₱"
+  }
+}

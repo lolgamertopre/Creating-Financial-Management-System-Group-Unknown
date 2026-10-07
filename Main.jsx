@@ -2697,6 +2697,379 @@ export default function PersonalBudgetTrackerWebApp() {
                     </div>
                 </div>
             )}
+
+            {/* =========================================================================
+                MODAL: AI FINANCIAL ADVISOR & HEALTH REPORT
+            ========================================================================= */}
+            {showAiAdvisorModal && (
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4 animate-fade-in">
+                    <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl animate-slide-up max-h-[90vh] overflow-hidden flex flex-col">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-5 pb-4 border-b border-slate-100 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-3xl">
+                            <div>
+                                <div className="text-base font-extrabold text-white flex items-center gap-2">
+                                    ✨ AI Financial Health Report
+                                </div>
+                                <div className="text-xs text-indigo-200 mt-0.5">
+                                    Powered by Pocketwise Intelligence Engine · {aiAnalysis?.generatedAt ? new Date(aiAnalysis.generatedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "Analyzing..."}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowAiAdvisorModal(false)}
+                                className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center font-bold text-sm"
+                            >✕</button>
+                        </div>
+
+                        <div className="overflow-y-auto p-5 space-y-4 flex-1">
+                            {aiLoading ? (
+                                <div className="flex flex-col items-center justify-center py-12 text-slate-400 gap-3">
+                                    <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                    <span className="text-sm font-semibold">AI is analyzing your finances...</span>
+                                </div>
+                            ) : aiAnalysis ? (
+                                <>
+                                    {/* Health Score Ring */}
+                                    <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <div
+                                            className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-extrabold border-4 shadow-inner flex-shrink-0"
+                                            style={{
+                                                borderColor: aiAnalysis.ratingColor,
+                                                color: aiAnalysis.ratingColor,
+                                                backgroundColor: `${aiAnalysis.ratingColor}15`,
+                                            }}
+                                        >
+                                            {aiAnalysis.score}
+                                        </div>
+                                        <div>
+                                            <div className="text-lg font-extrabold text-slate-900">{aiAnalysis.rating}</div>
+                                            <div className="text-xs text-slate-500 mt-0.5">
+                                                Daily spend: <strong>₱{aiAnalysis.summary?.dailyBurnRate}/day</strong> · Projected month-end: <strong>₱{aiAnalysis.summary?.projectedMonthTotal?.toLocaleString()}</strong>
+                                            </div>
+                                            <div className="text-xs text-slate-500 mt-0.5">
+                                                Savings rate: <strong className="text-emerald-600">{aiAnalysis.summary?.directSavingsRate}%</strong> · Days remaining: <strong>{aiAnalysis.summary?.daysRemaining}</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 50/30/20 Rule Breakdown */}
+                                    <div className="space-y-2">
+                                        <div className="text-xs font-extrabold text-slate-600 uppercase tracking-wider">50/30/20 Budget Rule</div>
+                                        {[
+                                            { label: "Needs (50%)", key: "needs", color: "#EF4444", targetPct: 50 },
+                                            { label: "Wants (30%)", key: "wants", color: "#F59E0B", targetPct: 30 },
+                                            { label: "Savings (20%)", key: "savings", color: "#10B981", targetPct: 20 },
+                                        ].map((rule) => {
+                                            const ruleData = aiAnalysis.rule50_30_20?.[rule.key];
+                                            const pct = ruleData?.actualPct || 0;
+                                            const over = pct > rule.targetPct;
+                                            return (
+                                                <div key={rule.key} className="space-y-1">
+                                                    <div className="flex justify-between text-xs font-semibold text-slate-700">
+                                                        <span>{rule.label}</span>
+                                                        <span className={over ? "text-rose-500" : "text-slate-600"}>{pct}% {over ? `(+${(pct - rule.targetPct).toFixed(0)}% over)` : "✓"}</span>
+                                                    </div>
+                                                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                        <div
+                                                            className="h-full rounded-full transition-all"
+                                                            style={{
+                                                                width: `${Math.min(100, (pct / rule.targetPct) * 100)}%`,
+                                                                backgroundColor: over ? "#EF4444" : rule.color,
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Budget Alerts */}
+                                    {aiAnalysis.budgetAlerts?.length > 0 && (
+                                        <div className="space-y-2">
+                                            <div className="text-xs font-extrabold text-slate-600 uppercase tracking-wider">Budget Alerts</div>
+                                            {aiAnalysis.budgetAlerts.map((alert, i) => (
+                                                <div
+                                                    key={i}
+                                                    className={`p-3 rounded-xl text-xs font-semibold border ${
+                                                        alert.level === "danger"
+                                                            ? "bg-rose-50 border-rose-200 text-rose-700"
+                                                            : "bg-amber-50 border-amber-200 text-amber-700"
+                                                    }`}
+                                                >
+                                                    <span className="font-extrabold uppercase">{alert.categoryId}:</span> {alert.message}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* AI Smart Insights */}
+                                    <div className="space-y-2">
+                                        <div className="text-xs font-extrabold text-slate-600 uppercase tracking-wider">Smart Insights</div>
+                                        {aiAnalysis.insights?.map((insight, i) => (
+                                            <div key={i} className="flex gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                                <span className="text-lg flex-shrink-0">{insight.icon}</span>
+                                                <div>
+                                                    <div className="text-xs font-extrabold text-slate-800">{insight.title}</div>
+                                                    <div className="text-xs text-slate-500 mt-0.5">{insight.description}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-center py-8 text-slate-400 text-xs">
+                                    Click "Refresh Analysis" to run AI diagnostics.
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-4 border-t border-slate-100 flex gap-2">
+                            <button
+                                onClick={() => runAiAnalysis()}
+                                disabled={aiLoading}
+                                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-xs shadow-md active:scale-95 transition disabled:opacity-50"
+                            >
+                                {aiLoading ? "Analyzing..." : "🔄 Refresh Analysis"}
+                            </button>
+                            <button
+                                onClick={() => setShowAiAdvisorModal(false)}
+                                className="px-5 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* =========================================================================
+                MODAL: LIVE CURRENCY EXCHANGE RATES & FX CONVERTER
+            ========================================================================= */}
+            {showRatesModal && (
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4 animate-fade-in">
+                    <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl animate-slide-up max-h-[90vh] overflow-hidden flex flex-col">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-5 pb-4 border-b border-slate-100">
+                            <div>
+                                <div className="text-base font-extrabold text-slate-900">💱 Live Exchange Rates</div>
+                                <div className="text-xs text-slate-400 mt-0.5">
+                                    {ratesData?.provider === "fallback-cached" ? "📶 Fallback rates (offline)" : ratesData?.provider ? `✅ ${ratesData.provider}` : "Loading..."}
+                                    {ratesData?.timestamp ? ` · ${new Date(ratesData.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}` : ""}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowRatesModal(false)}
+                                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm"
+                            >✕</button>
+                        </div>
+
+                        <div className="overflow-y-auto p-5 space-y-5 flex-1">
+                            {/* FX Converter */}
+                            <div className="space-y-3">
+                                <div className="text-xs font-extrabold text-slate-600 uppercase tracking-wider">Currency Converter</div>
+                                <div className="flex items-center gap-2">
+                                    <div className="flex-1 space-y-1">
+                                        <label className="text-[11px] font-bold text-slate-500">Amount</label>
+                                        <input
+                                            type="number"
+                                            value={converterAmount}
+                                            onChange={(e) => setConverterAmount(Number(e.target.value))}
+                                            className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                            placeholder="Amount"
+                                            min="0"
+                                        />
+                                    </div>
+                                    <div className="flex-1 space-y-1">
+                                        <label className="text-[11px] font-bold text-slate-500">From</label>
+                                        <select
+                                            value={converterFrom}
+                                            onChange={(e) => setConverterFrom(e.target.value)}
+                                            className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        >
+                                            <option value="PHP">🇵🇭 PHP</option>
+                                            {ratesData?.popularCurrencies?.map((c) => (
+                                                <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="flex-1 space-y-1">
+                                        <label className="text-[11px] font-bold text-slate-500">To</label>
+                                        <select
+                                            value={converterTo}
+                                            onChange={(e) => setConverterTo(e.target.value)}
+                                            className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        >
+                                            <option value="PHP">🇵🇭 PHP</option>
+                                            {ratesData?.popularCurrencies?.map((c) => (
+                                                <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                {/* Conversion Result */}
+                                <div className="p-3.5 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-center justify-between">
+                                    <div className="text-xs text-indigo-500 font-semibold">{converterAmount.toLocaleString()} {converterFrom} =</div>
+                                    <div className="text-lg font-extrabold text-indigo-700">
+                                        {(() => {
+                                            if (!ratesData?.rates) return "...";
+                                            const fromRate = converterFrom === "PHP" ? 1 : (ratesData.rates[converterFrom] || 1);
+                                            const toRate = converterTo === "PHP" ? 1 : (ratesData.rates[converterTo] || 1);
+                                            const phpBase = 1; // PHP is base
+                                            // rates are how many of currency per 1 PHP (when base=PHP)
+                                            const inPhp = converterFrom === "PHP" ? converterAmount : (converterAmount / fromRate);
+                                            const result = converterTo === "PHP" ? inPhp : (inPhp * toRate);
+                                            return result.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + converterTo;
+                                        })()}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Popular Rates Grid */}
+                            <div className="space-y-2">
+                                <div className="text-xs font-extrabold text-slate-600 uppercase tracking-wider">Popular Rates vs Philippine Peso (₱)</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {ratesData?.popularCurrencies?.map((curr) => (
+                                        <div
+                                            key={curr.code}
+                                            onClick={() => {
+                                                setConverterFrom(curr.code);
+                                                setConverterTo("PHP");
+                                                setConverterAmount(1);
+                                            }}
+                                            className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-indigo-50 hover:border-indigo-100 cursor-pointer transition"
+                                        >
+                                            <div>
+                                                <div className="text-xs font-bold text-slate-700">{curr.flag} {curr.code}</div>
+                                                <div className="text-[11px] text-slate-400">{curr.name}</div>
+                                            </div>
+                                            <div className="text-xs font-extrabold text-slate-900">
+                                                ₱{curr.rateToPhp?.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t border-slate-100 flex gap-2">
+                            <button
+                                onClick={async () => {
+                                    const rates = await fetchLiveExchangeRates("PHP");
+                                    setRatesData(rates);
+                                }}
+                                className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs active:scale-95 transition"
+                            >
+                                🔄 Refresh Rates
+                            </button>
+                            <button
+                                onClick={() => setShowRatesModal(false)}
+                                className="px-5 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* =========================================================================
+                MODAL: REST API SERVER CONSOLE & DIAGNOSTICS
+            ========================================================================= */}
+            {showApiServerModal && (
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4 animate-fade-in">
+                    <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl animate-slide-up max-h-[90vh] overflow-hidden flex flex-col">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-5 pb-4 bg-slate-900 rounded-t-3xl">
+                            <div>
+                                <div className="text-base font-extrabold text-white flex items-center gap-2">
+                                    🌐 REST API Server Console
+                                </div>
+                                <div className={`text-xs mt-0.5 font-semibold ${apiHealth.online ? "text-emerald-400" : "text-amber-400"}`}>
+                                    {apiHealth.online ? `● Online · ${apiHealth.latency}ms response · ${apiHealth.data?.version || "v2.0.0"}` : "● Offline mode · Local Dexie DB active"}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowApiServerModal(false)}
+                                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center font-bold text-sm"
+                            >✕</button>
+                        </div>
+
+                        <div className="overflow-y-auto p-5 space-y-4 flex-1">
+                            {/* Server Info */}
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                                {[
+                                    { label: "Expenses", value: apiHealth.data?.database?.expensesCount ?? expensesList.length },
+                                    { label: "Incomes", value: apiHealth.data?.database?.incomesCount ?? incomesList.length },
+                                    { label: "Savings", value: apiHealth.data?.database?.savingsCount ?? savingsList.length },
+                                ].map((stat) => (
+                                    <div key={stat.label} className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <div className="text-[10px] text-slate-400 font-bold uppercase">{stat.label}</div>
+                                        <div className="text-lg font-extrabold text-slate-800 mt-1">{stat.value}</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* API Endpoints */}
+                            <div className="space-y-2">
+                                <div className="text-xs font-extrabold text-slate-600 uppercase tracking-wider">Available API Endpoints</div>
+                                <div className="space-y-1.5">
+                                    {[
+                                        { method: "GET", path: "/api/health", label: "Server health & diagnostics" },
+                                        { method: "POST", path: "/api/sync", label: "Bidirectional 2-way batch sync" },
+                                        { method: "GET", path: "/api/summary", label: "Monthly financial summary" },
+                                        { method: "GET/POST", path: "/api/expenses", label: "Expenses CRUD" },
+                                        { method: "GET/POST", path: "/api/incomes", label: "Incomes CRUD" },
+                                        { method: "GET/POST", path: "/api/savings", label: "Savings CRUD" },
+                                        { method: "GET/POST", path: "/api/budgets", label: "Category budget management" },
+                                        { method: "GET", path: "/api/rates", label: "Live currency exchange rates" },
+                                        { method: "GET", path: "/api/rates/convert", label: "FX currency converter" },
+                                        { method: "POST", path: "/api/ai/advisor", label: "AI financial health analysis" },
+                                        { method: "POST", path: "/api/ai/categorize", label: "Smart NLP expense parser" },
+                                        { method: "POST", path: "/api/auth/login", label: "Client authentication" },
+                                    ].map((ep) => (
+                                        <div key={ep.path} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                                            <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded shrink-0 ${
+                                                ep.method.startsWith("GET") ? "bg-emerald-100 text-emerald-700" :
+                                                ep.method === "POST" ? "bg-blue-100 text-blue-700" : "bg-indigo-100 text-indigo-700"
+                                            }`}>
+                                                {ep.method}
+                                            </span>
+                                            <code className="text-[11px] font-mono text-indigo-600 shrink-0">{ep.path}</code>
+                                            <span className="text-[11px] text-slate-400 truncate">{ep.label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Architecture Note */}
+                            <div className="p-3.5 bg-indigo-50 rounded-2xl border border-indigo-100 text-xs text-indigo-700">
+                                <div className="font-extrabold mb-1">Architecture</div>
+                                <div>This API runs <strong>embedded inside the Vite dev server</strong> via <code className="bg-white/60 px-1 rounded font-mono">financialApiPlugin()</code> — no separate server process required. Data persists in <code className="bg-white/60 px-1 rounded font-mono">server_data/database.json</code>.</div>
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t border-slate-100 flex gap-2">
+                            <button
+                                onClick={async () => {
+                                    const health = await checkBackendHealth();
+                                    if (health.online) {
+                                        setSyncMessage(`API Server: ${health.latency}ms · ${health.data?.database?.expensesCount || 0} records synced`);
+                                        setTimeout(() => setSyncMessage(""), 3000);
+                                    }
+                                }}
+                                className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs active:scale-95 transition"
+                            >
+                                🔍 Ping API Server
+                            </button>
+                            <button
+                                onClick={() => setShowApiServerModal(false)}
+                                className="px-5 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
