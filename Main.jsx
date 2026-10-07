@@ -27,6 +27,13 @@ import {
     resetDatabaseToDemo,
     db,
 } from "./db.js";
+import {
+    checkApiHealth,
+    fetchLiveExchangeRates,
+    getAIFinancialAnalysis,
+    smartParseExpenseWithAI,
+    syncBatchWithServer,
+} from "./apiService.js";
 
 // Format currency in Philippine Peso (₱) by default as per SRS 2.3.10
 function formatCurrency(amount, currency = "₱") {
@@ -75,6 +82,26 @@ export default function PersonalBudgetTrackerWebApp() {
     const [serverLogs, setServerLogs] = useState([]);
     const [currency, setCurrency] = useState("₱");
     const [loading, setLoading] = useState(true);
+
+    // Reliable API & AI Integration State
+    const [apiHealth, setApiHealth] = useState({ online: false, latency: 0, data: null, checking: false });
+    const [showApiServerModal, setShowApiServerModal] = useState(false);
+    const [showRatesModal, setShowRatesModal] = useState(false);
+    const [ratesData, setRatesData] = useState(null);
+    const [showAiAdvisorModal, setShowAiAdvisorModal] = useState(false);
+    const [aiAnalysis, setAiAnalysis] = useState(null);
+    const [aiLoading, setAiLoading] = useState(false);
+
+    // AI Smart Quick Fill State
+    const [aiQuickExpenseText, setAiQuickExpenseText] = useState("");
+    const [aiQuickIncomeText, setAiQuickIncomeText] = useState("");
+    const [aiQuickLoading, setAiQuickLoading] = useState(false);
+    const [aiQuickNotice, setAiQuickNotice] = useState("");
+
+    // Live Currency Converter State
+    const [converterAmount, setConverterAmount] = useState(100);
+    const [converterFrom, setConverterFrom] = useState("USD");
+    const [converterTo, setConverterTo] = useState("PHP");
 
     // UI & Sync Status
     const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
@@ -130,7 +157,63 @@ export default function PersonalBudgetTrackerWebApp() {
     const [editingBudgetCat, setEditingBudgetCat] = useState(null);
     const [formBudgetAmount, setFormBudgetAmount] = useState("");
 
-    // Load initial data from Dexie
+    // Check backend API Server health & latency
+    const checkBackendHealth = async () => {
+        setApiHealth((prev) => ({ ...prev, checking: true }));
+        const health = await checkApiHealth();
+        setApiHealth({ online: health.online, latency: health.latency, data: health.data, checking: false });
+        return health;
+    };
+
+    // Load Live Currency Exchange Rates
+    const loadRates = async () => {
+        const rates = await fetchLiveExchangeRates("PHP");
+        setRatesData(rates);
+    };
+
+    // Run AI Financial Analysis
+    const runAiAnalysis = async (customExp = expensesList, customInc = incomesList, customSav = savingsList, customBud = budgetsList) => {
+        setAiLoading(true);
+        const analysis = await getAIFinancialAnalysis({
+            expenses: customExp,
+            incomes: customInc,
+            savings: customSav,
+            budgets: customBud,
+            client,
+            month: selectedMonth,
+        });
+        if (analysis) {
+            setAiAnalysis(analysis);
+        }
+        setAiLoading(false);
+    };
+
+    // Handle Smart NLP Quick Parse
+    const handleQuickAiParse = async (text, type = "expense") => {
+        if (!text || !text.trim()) return;
+        setAiQuickLoading(true);
+        setAiQuickNotice("");
+        const parsed = await smartParseExpenseWithAI(text);
+        setAiQuickLoading(false);
+        if (parsed && parsed.success) {
+            if (type === "expense") {
+                if (parsed.name) setFormExpenseName(parsed.name);
+                if (parsed.amount) setFormExpenseAmount(parsed.amount);
+                if (parsed.category_id && categories.some((c) => c.category_id === parsed.category_id)) {
+                    setFormExpenseCategory(parsed.category_id);
+                }
+                setAiQuickNotice(`✨ AI identified: ${parsed.name} (₱${parsed.amount}) in ${parsed.category_id}`);
+            } else {
+                if (parsed.name) setFormIncomeDesc(parsed.name);
+                if (parsed.amount) setFormIncomeAmount(parsed.amount);
+                setAiQuickNotice(`✨ AI identified: ₱${parsed.amount} income from ${parsed.name}`);
+            }
+        } else {
+            setAiQuickNotice("Could not parse details. Please enter manually.");
+        }
+    };
+
+    // Load initial data from Dexie & sync with backend API
     const refreshAllData = async () => {
         try {
             await initDatabaseDefaults();
@@ -149,6 +232,9 @@ export default function PersonalBudgetTrackerWebApp() {
             setBudgetsList(bud);
             setServerLogs(logs);
             setCurrency(curr || "₱");
+
+            // Refresh AI insights
+            runAiAnalysis(exp, inc, sav, bud);
         } catch (err) {
             console.error("Dexie database load error:", err);
         }
@@ -158,6 +244,8 @@ export default function PersonalBudgetTrackerWebApp() {
         (async () => {
             await refreshAllData();
             setLoading(false);
+            await checkBackendHealth();
+            await loadRates();
         })();
 
         const handleOnline = async () => {
@@ -525,32 +613,79 @@ export default function PersonalBudgetTrackerWebApp() {
                             ))}
                         </nav>
 
-                        {/* Right: Actions, Sync, & User Account */}
-                        <div className="flex items-center gap-2.5">
+                        {/* Right: Actions, Sync, Rates, AI & User Account */}
+                        <div className="flex items-center gap-2">
+                            {/* API Server Status Pill */}
+                            <button
+                                onClick={() => setShowApiServerModal(true)}
+                                className={`px-2.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border transition active:scale-95 ${
+                                    apiHealth.online
+                                        ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                                        : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                                }`}
+                                title="Click to view REST API Server diagnostics & endpoints"
+                            >
+                                <span className={`w-2 h-2 rounded-full ${apiHealth.online ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
+                                <span className="hidden sm:inline">
+                                    {apiHealth.online ? `API Online (${apiHealth.latency}ms)` : "Offline DB"}
+                                </span>
+                            </button>
+
+                            {/* Live Rates Trigger */}
+                            <button
+                                onClick={() => setShowRatesModal(true)}
+                                className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs flex items-center gap-1 active:scale-95 transition shadow-2xs"
+                                title="Live Currency Exchange Rates"
+                            >
+                                <span>💱</span>
+                                <span className="hidden lg:inline">Rates</span>
+                            </button>
+
+                            {/* AI Advisor Trigger */}
+                            <button
+                                onClick={() => {
+                                    runAiAnalysis();
+                                    setShowAiAdvisorModal(true);
+                                }}
+                                className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold text-xs flex items-center gap-1 shadow-xs hover:shadow-md active:scale-95 transition"
+                                title="AI Financial Advisor & Insights"
+                            >
+                                <span>✨</span>
+                                <span className="hidden md:inline">AI Advisor</span>
+                                {aiAnalysis && (
+                                    <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/20 text-[10px]">
+                                        {aiAnalysis.score}
+                                    </span>
+                                )}
+                            </button>
+
                             {/* Sync Status Badge */}
                             <button
                                 onClick={async () => {
                                     setIsSyncing(true);
-                                    setSyncMessage("Syncing database...");
-                                    const res = await syncPendingData();
+                                    setSyncMessage("Syncing with cloud database...");
+                                    const res = await syncPendingData("/api/sync", true);
                                     setIsSyncing(false);
-                                    setSyncMessage(res.success ? "All records synchronized!" : "Saved in Dexie offline database.");
+                                    setSyncMessage(res.success ? "All records synchronized with database!" : "Saved in Dexie offline database.");
                                     setTimeout(() => setSyncMessage(""), 3000);
                                     await refreshAllData();
                                 }}
-                                className="px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 bg-white border border-slate-200/80 shadow-xs text-slate-700 hover:bg-slate-50 transition"
+                                className="px-2.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 bg-white border border-slate-200/80 shadow-2xs text-slate-700 hover:bg-slate-50 transition"
                                 title="Click to synchronize offline data"
                             >
-                                <span className={`w-2.5 h-2.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500"} ${isSyncing ? "animate-ping" : ""}`} />
-                                <span className="hidden sm:inline">{isSyncing ? "Syncing..." : isOnline ? "Online" : "Offline"}</span>
+                                <span className={`w-2.5 h-2.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500"} ${isSyncing ? "animate-spin" : ""}`}>
+                                    {isSyncing ? "🔄" : "☁️"}
+                                </span>
+                                <span className="hidden xl:inline">{isSyncing ? "Syncing..." : "Sync"}</span>
                             </button>
 
                             {/* Quick Add Buttons on Desktop */}
-                            <div className="hidden lg:flex items-center gap-2">
+                            <div className="hidden lg:flex items-center gap-1.5 ml-1">
                                 <button
                                     onClick={() => {
                                         setFormIncomeAmount("");
                                         setFormIncomeDesc("");
+                                        setAiQuickIncomeText("");
                                         setShowAddIncomeModal(true);
                                     }}
                                     className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-xs active:scale-95 transition"
@@ -562,10 +697,11 @@ export default function PersonalBudgetTrackerWebApp() {
                                         setFormExpenseName("");
                                         setFormExpenseAmount("");
                                         setFormExpenseDesc("");
+                                        setAiQuickExpenseText("");
                                         setFormExpenseCategory(SRS_CATEGORIES[0].category_id);
                                         setShowAddExpenseModal(true);
                                     }}
-                                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 active:scale-95 transition"
+                                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 active:scale-95 transition"
                                 >
                                     + Expense
                                 </button>
@@ -574,7 +710,7 @@ export default function PersonalBudgetTrackerWebApp() {
                             {/* User Account / Profile */}
                             <button
                                 onClick={() => setActiveTab("settings")}
-                                className="w-9 h-9 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs hover:bg-indigo-100 transition"
+                                className="w-8 h-8 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs hover:bg-indigo-100 transition"
                                 title="Client Account & Settings"
                             >
                                 👩‍👦
@@ -625,6 +761,90 @@ export default function PersonalBudgetTrackerWebApp() {
                 ===================================================================== */}
                 {activeTab === "home" && (
                     <div className="space-y-6 animate-fade-in">
+                        {/* AI Financial Health & Live Exchange Rates Banner */}
+                        <div className="rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 shadow-xl border border-indigo-900/50 relative overflow-hidden">
+                            {/* Decorative background glow */}
+                            <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+                            <div className="absolute bottom-0 left-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                            <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                                {/* Left: AI Health Score & Diagnosis */}
+                                <div className="space-y-2 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-500/30 text-indigo-300 border border-indigo-400/30 flex items-center gap-1.5">
+                                            <span>✨ AI Financial Advisor</span>
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                        </span>
+                                        {aiAnalysis && (
+                                            <span
+                                                className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border"
+                                                style={{
+                                                    backgroundColor: `${aiAnalysis.ratingColor}20`,
+                                                    color: aiAnalysis.ratingColor,
+                                                    borderColor: `${aiAnalysis.ratingColor}40`,
+                                                }}
+                                            >
+                                                Score: {aiAnalysis.score}/100 • {aiAnalysis.rating}
+                                            </span>
+                                        )}
+                                        <span className="text-[11px] text-slate-400">
+                                            50/30/20 Rule: Needs {aiAnalysis?.rule50_30_20?.needs?.actualPct || 0}% • Wants {aiAnalysis?.rule50_30_20?.wants?.actualPct || 0}% • Savings {aiAnalysis?.rule50_30_20?.savings?.actualPct || 0}%
+                                        </span>
+                                    </div>
+
+                                    <div className="text-sm font-semibold text-slate-200">
+                                        {aiAnalysis?.insights?.[0]?.description || "Tracking daily burn rate and monthly budget health across all 7 categories."}
+                                    </div>
+
+                                    <div className="flex items-center gap-3 pt-1">
+                                        <button
+                                            onClick={() => {
+                                                runAiAnalysis();
+                                                setShowAiAdvisorModal(true);
+                                            }}
+                                            className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-500/30 active:scale-95 transition flex items-center gap-1.5"
+                                        >
+                                            <span>View Full AI Health Report</span>
+                                            <span>→</span>
+                                        </button>
+                                        <div className="text-xs text-slate-400 hidden sm:inline">
+                                            Daily Burn Rate: <strong className="text-white">₱{aiAnalysis?.summary?.dailyBurnRate || 0}/day</strong>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Right: Live Forex Rates Bar */}
+                                <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-3 sm:p-4 min-w-[280px]">
+                                    <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-white/10">
+                                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
+                                            <span>💱 Live Forex (vs PHP)</span>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowRatesModal(true)}
+                                            className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 hover:underline"
+                                        >
+                                            FX Converter →
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2 text-center">
+                                        {ratesData?.popularCurrencies?.slice(0, 3).map((curr) => (
+                                            <div
+                                                key={curr.code}
+                                                onClick={() => {
+                                                    setConverterFrom(curr.code);
+                                                    setShowRatesModal(true);
+                                                }}
+                                                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer transition"
+                                            >
+                                                <div className="text-[10px] text-slate-400 font-bold">{curr.flag} {curr.code}</div>
+                                                <div className="text-xs font-extrabold text-white mt-0.5">₱{curr.rateToPhp}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Top Hero Cards (4 across on desktop) */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             {/* 1. Total Income */}
@@ -1659,6 +1879,82 @@ export default function PersonalBudgetTrackerWebApp() {
                                         </button>
                                     ))}
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Reliable REST API Server & Cloud Sync Console */}
+                        <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-100">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                                    <span>🌐</span>
+                                    <span>Reliable REST API & Cloud Sync Engine</span>
+                                </div>
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                                    apiHealth.online ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                                }`}>
+                                    {apiHealth.online ? `● Connected (${apiHealth.latency}ms)` : "● Local Offline Mode"}
+                                </span>
+                            </div>
+                            <div className="text-xs text-slate-500 mb-4">
+                                High-reliability backend API providing full CRUD endpoints, 2-way batch synchronization, live forex exchange rates, and AI financial analysis.
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 text-xs">
+                                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1.5">
+                                    <div className="font-bold text-slate-700">API Health Status</div>
+                                    <div className="flex justify-between text-slate-500">
+                                        <span>Endpoint:</span>
+                                        <code className="bg-white px-1.5 py-0.5 rounded border text-[11px] font-mono">/api/health</code>
+                                    </div>
+                                    <div className="flex justify-between text-slate-500">
+                                        <span>Status:</span>
+                                        <span className="font-bold text-emerald-600">{apiHealth.online ? "Healthy & Responsive" : "Offline / Local"}</span>
+                                    </div>
+                                    <div className="flex justify-between text-slate-500">
+                                        <span>Response Latency:</span>
+                                        <span className="font-bold text-slate-700">{apiHealth.latency} ms</span>
+                                    </div>
+                                </div>
+
+                                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1.5">
+                                    <div className="font-bold text-slate-700">Storage & Sync</div>
+                                    <div className="flex justify-between text-slate-500">
+                                        <span>Local Engine:</span>
+                                        <span className="font-bold text-slate-700">Dexie IndexedDB v2</span>
+                                    </div>
+                                    <div className="flex justify-between text-slate-500">
+                                        <span>Server Storage:</span>
+                                        <span className="font-bold text-slate-700">Persistent JSON Store</span>
+                                    </div>
+                                    <div className="flex justify-between text-slate-500">
+                                        <span>Sync Protocol:</span>
+                                        <span className="font-bold text-indigo-600">2-Way Reconciled Sync</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => setShowApiServerModal(true)}
+                                    className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition active:scale-95 text-center"
+                                >
+                                    Open API Console & Endpoints
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        setIsSyncing(true);
+                                        setSyncMessage("Syncing with cloud database...");
+                                        const res = await syncPendingData("/api/sync", true);
+                                        setIsSyncing(false);
+                                        setSyncMessage(res.success ? "All records synchronized with database!" : "Saved in Dexie offline database.");
+                                        setTimeout(() => setSyncMessage(""), 3000);
+                                        await refreshAllData();
+                                        await checkBackendHealth();
+                                    }}
+                                    className="py-2.5 px-4 rounded-xl border border-indigo-200 text-indigo-600 hover:bg-indigo-50 font-bold text-xs transition active:scale-95"
+                                >
+                                    Force Cloud Sync Now
+                                </button>
                             </div>
                         </div>
 

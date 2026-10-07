@@ -581,7 +581,7 @@ export async function setCurrency(symbol) {
 // ==========================================
 // SYNC ENGINE
 // ==========================================
-export async function syncPendingData(apiEndpoint = '/api/sync') {
+export async function syncPendingData(apiEndpoint = '/api/sync', forceSync = false) {
     if (!navigator.onLine) {
         return { success: false, reason: 'offline' };
     }
@@ -593,14 +593,14 @@ export async function syncPendingData(apiEndpoint = '/api/sync') {
         const pendingLogs = await db.auditLogs.where('syncStatus').equals('pending').toArray();
 
         const totalPending = pendingExpenses.length + pendingIncomes.length + pendingSavings.length + pendingLogs.length;
-        if (totalPending === 0) {
-            return { success: true, count: 0 };
+        if (totalPending === 0 && !forceSync) {
+            return { success: true, count: 0, reason: 'already_synced' };
         }
 
         const payload = {
-            expenses: pendingExpenses,
-            incomes: pendingIncomes,
-            savings: pendingSavings,
+            expenses: forceSync ? await db.expenses.toArray() : pendingExpenses,
+            incomes: forceSync ? await db.incomes.toArray() : pendingIncomes,
+            savings: forceSync ? await db.savings.toArray() : pendingSavings,
             auditLogs: pendingLogs,
             syncedAt: new Date().toISOString(),
         };
@@ -615,15 +615,47 @@ export async function syncPendingData(apiEndpoint = '/api/sync') {
         });
 
         if (response && response.ok) {
+            const resultData = await response.json();
+
             await db.transaction('rw', db.expenses, db.incomes, db.savings, db.auditLogs, async () => {
                 for (const item of pendingExpenses) await db.expenses.update(item.expense_id, { syncStatus: 'synced' });
                 for (const item of pendingIncomes) await db.incomes.update(item.income_id, { syncStatus: 'synced' });
                 for (const item of pendingSavings) await db.savings.update(item.savings_id, { syncStatus: 'synced' });
                 for (const item of pendingLogs) await db.auditLogs.update(item.logId, { syncStatus: 'synced' });
+
+                // If server provided reconciled data, merge back to Dexie
+                if (resultData?.serverData) {
+                    const sData = resultData.serverData;
+                    if (Array.isArray(sData.expenses)) {
+                        for (const exp of sData.expenses) {
+                            const exists = await db.expenses.get(exp.expense_id);
+                            if (!exists || exists.syncStatus === 'synced') {
+                                await db.expenses.put({ ...exp, syncStatus: 'synced' });
+                            }
+                        }
+                    }
+                    if (Array.isArray(sData.incomes)) {
+                        for (const inc of sData.incomes) {
+                            const exists = await db.incomes.get(inc.income_id);
+                            if (!exists || exists.syncStatus === 'synced') {
+                                await db.incomes.put({ ...inc, syncStatus: 'synced' });
+                            }
+                        }
+                    }
+                    if (Array.isArray(sData.savings)) {
+                        for (const sav of sData.savings) {
+                            const exists = await db.savings.get(sav.savings_id);
+                            if (!exists || exists.syncStatus === 'synced') {
+                                await db.savings.put({ ...sav, syncStatus: 'synced' });
+                            }
+                        }
+                    }
+                }
             });
+
             await setMeta('lastSyncedAt', new Date().toISOString());
             window.dispatchEvent(new CustomEvent('sync-completed', { detail: payload }));
-            return { success: true, count: totalPending };
+            return { success: true, count: totalPending, syncedAt: resultData.syncedAt, serverData: resultData.serverData };
         }
 
         await setMeta('lastSyncAttempt', new Date().toISOString());
