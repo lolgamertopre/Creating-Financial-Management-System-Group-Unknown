@@ -16,8 +16,8 @@ export function financialApiPlugin() {
         configureServer(server) {
             server.middlewares.use(async (req, res, next) => {
                 if (isApiRoute(req.url)) {
-                    const handled = await handleApiRequest(req, res);
-                    if (handled) return;
+                    await handleApiRequest(req, res);
+                    if (res.writableEnded || res.headersSent) return;
                 }
                 next();
             });
@@ -25,8 +25,8 @@ export function financialApiPlugin() {
         configurePreviewServer(server) {
             server.middlewares.use(async (req, res, next) => {
                 if (isApiRoute(req.url)) {
-                    const handled = await handleApiRequest(req, res);
-                    if (handled) return;
+                    await handleApiRequest(req, res);
+                    if (res.writableEnded || res.headersSent) return;
                 }
                 next();
             });

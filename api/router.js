@@ -21,12 +21,14 @@ async function parseBody(req) {
 
 // Helper to send JSON response
 function sendJson(res, statusCode, data) {
+    if (res.writableEnded) return true;
     res.statusCode = statusCode;
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.end(JSON.stringify(data));
+    return true;
 }
 
 export async function handleApiRequest(req, res) {
