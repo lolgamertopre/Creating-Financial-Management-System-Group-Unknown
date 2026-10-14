@@ -2,6 +2,13 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('FinancialManagementDB');
 
+// Version 1 schema (legacy backwards compatibility)
+db.version(1).stores({
+    transactions: 'id, date, kind, name, syncStatus, isDeleted',
+    auditLogs: 'logId, timestamp, action, syncStatus',
+    meta: 'key',
+});
+
 // Define database schema matching SRS Section 2.5 and ERD
 db.version(2).stores({
     clients: 'client_id, username',
@@ -14,6 +21,28 @@ db.version(2).stores({
     auditLogs: 'logId, timestamp, action, syncStatus',
     meta: 'key',
 });
+
+let dbOpenPromise = null;
+export async function ensureDbOpen() {
+    if (db.isOpen()) return;
+    if (!dbOpenPromise) {
+        dbOpenPromise = (async () => {
+            try {
+                await db.open();
+            } catch (err) {
+                console.warn('Dexie open error, auto-recovering database:', err);
+                try {
+                    db.close();
+                    await Dexie.delete('FinancialManagementDB');
+                    await db.open();
+                } catch (recovErr) {
+                    console.error('Dexie critical recovery error:', recovErr);
+                }
+            }
+        })();
+    }
+    return dbOpenPromise;
+}
 
 // Default SRS categories
 export const SRS_CATEGORIES = [
@@ -100,6 +129,7 @@ export const INCOME_SOURCES = [
 
 // Initialize default seed data matching SRS requirements and Screenshot demo
 export async function initDatabaseDefaults() {
+    await ensureDbOpen();
     // HYBRID: run client check + category check in parallel
     const [clientCount, existingCategories] = await Promise.all([
         db.clients.count(),
