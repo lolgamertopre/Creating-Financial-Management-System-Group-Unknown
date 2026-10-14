@@ -100,8 +100,13 @@ export const INCOME_SOURCES = [
 
 // Initialize default seed data matching SRS requirements and Screenshot demo
 export async function initDatabaseDefaults() {
-    // 1. Check client
-    const clientCount = await db.clients.count();
+    // HYBRID: run client check + category check in parallel
+    const [clientCount, existingCategories] = await Promise.all([
+        db.clients.count(),
+        db.categories.toArray(),
+    ]);
+
+    // 1. Seed client if missing
     if (clientCount === 0) {
         await db.clients.put({
             client_id: 'client_1',
@@ -111,40 +116,36 @@ export async function initDatabaseDefaults() {
         });
     }
 
-    // 2. Check categories
-    for (const cat of SRS_CATEGORIES) {
-        const existing = await db.categories.get(cat.category_id);
-        if (!existing) {
-            await db.categories.put(cat);
-        }
+    // 2. Batch-seed categories that are missing (bulkPut is faster than individual puts)
+    const existingIds = new Set(existingCategories.map((c) => c.category_id));
+    const missingCategories = SRS_CATEGORIES.filter((c) => !existingIds.has(c.category_id));
+    if (missingCategories.length > 0) {
+        await db.categories.bulkPut(missingCategories);
     }
 
     // 3. Check Budgets
     const budgetCount = await db.budgets.count();
     if (budgetCount === 0) {
-        const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-        for (const cat of SRS_CATEGORIES) {
-            await db.budgets.put({
+        const currentMonth = new Date().toISOString().slice(0, 7);
+        await db.budgets.bulkPut(
+            SRS_CATEGORIES.map((cat) => ({
                 budget_id: `budget_${cat.category_id}_${currentMonth}`,
                 client_id: 'client_1',
                 category_id: cat.category_id,
                 budget_amount: cat.defaultBudget,
                 month: currentMonth,
-            });
-        }
+            }))
+        );
     }
 
-    // 4. Seed default sample data if completely empty (matches screenshot and SRS Example)
-    const expenseCount = await db.expenses.count();
-    const incomeCount = await db.incomes.count();
-    const savingsCount = await db.savings.count();
+    // 4. Seed default sample data if completely empty
+    const [expenseCount, incomeCount, savingsCount] = await Promise.all([
+        db.expenses.count(),
+        db.incomes.count(),
+        db.savings.count(),
+    ]);
 
     if (expenseCount === 0 && incomeCount === 0) {
-        // Screenshots exact 4 expenses:
-        // Electric bill (-₱2,450.00, Bills, Oct 4)
-        // Weekly groceries (-₱860.00, Food, Oct 3)
-        // Fuel (-₱320.00, Transport, Oct 2)
-        // Household items (-₱550.00, Shopping, Oct 1)
         const now = new Date();
         const year = now.getFullYear();
         const month = now.getMonth();
@@ -196,23 +197,18 @@ export async function initDatabaseDefaults() {
             },
         ];
 
-        for (const exp of seedExpenses) {
-            await db.expenses.put(exp);
-            // also keep unified transactions updated
-            await db.transactions.put({
-                id: exp.expense_id,
-                kind: 'out',
-                name: exp.name,
-                amount: exp.amount,
-                categoryId: exp.category_id,
-                date: exp.date,
-                description: exp.description,
-                isDeleted: 0,
-                syncStatus: 'synced',
-            });
-        }
+        const seedTransactionsFromExpenses = seedExpenses.map((exp) => ({
+            id: exp.expense_id,
+            kind: 'out',
+            name: exp.name,
+            amount: exp.amount,
+            categoryId: exp.category_id,
+            date: exp.date,
+            description: exp.description,
+            isDeleted: 0,
+            syncStatus: 'synced',
+        }));
 
-        // Seed default Income matching SRS
         const seedIncomes = [
             {
                 income_id: 201,
@@ -236,21 +232,24 @@ export async function initDatabaseDefaults() {
             },
         ];
 
-        for (const inc of seedIncomes) {
-            await db.incomes.put(inc);
-            await db.transactions.put({
-                id: inc.income_id,
-                kind: 'in',
-                name: inc.source,
-                amount: inc.amount,
-                date: inc.date,
-                description: inc.description,
-                isDeleted: 0,
-                syncStatus: 'synced',
-            });
-        }
+        const seedTransactionsFromIncomes = seedIncomes.map((inc) => ({
+            id: inc.income_id,
+            kind: 'in',
+            name: inc.source,
+            amount: inc.amount,
+            date: inc.date,
+            description: inc.description,
+            isDeleted: 0,
+            syncStatus: 'synced',
+        }));
 
-        // Seed default Savings matching SRS
+        // HYBRID: bulkPut all seed data in parallel transactions
+        await Promise.all([
+            db.expenses.bulkPut(seedExpenses),
+            db.incomes.bulkPut(seedIncomes),
+            db.transactions.bulkPut([...seedTransactionsFromExpenses, ...seedTransactionsFromIncomes]),
+        ]);
+
         if (savingsCount === 0) {
             await db.savings.put({
                 savings_id: 301,
@@ -587,11 +586,13 @@ export async function syncPendingData(apiEndpoint = '/api/sync', forceSync = fal
     }
 
     try {
-        const pendingExpenses = await db.expenses.where('syncStatus').equals('pending').toArray();
-        const pendingIncomes = await db.incomes.where('syncStatus').equals('pending').toArray();
-        const pendingSavings = await db.savings.where('syncStatus').equals('pending').toArray();
-        const pendingLogs = await db.auditLogs.where('syncStatus').equals('pending').toArray();
-
+        // HYBRID: parallel pending queries instead of sequential awaits
+        const [pendingExpenses, pendingIncomes, pendingSavings, pendingLogs] = await Promise.all([
+            db.expenses.where('syncStatus').equals('pending').toArray(),
+            db.incomes.where('syncStatus').equals('pending').toArray(),
+            db.savings.where('syncStatus').equals('pending').toArray(),
+            db.auditLogs.where('syncStatus').equals('pending').toArray(),
+        ]);
         const totalPending = pendingExpenses.length + pendingIncomes.length + pendingSavings.length + pendingLogs.length;
         if (totalPending === 0 && !forceSync) {
             return { success: true, count: 0, reason: 'already_synced' };
