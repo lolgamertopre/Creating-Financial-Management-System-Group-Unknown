@@ -70,7 +70,7 @@
       "description": "Meralco electricity bill payment",
       "isDeleted": 0,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-07T12:14:32.085Z"
+      "updatedAt": "2026-10-19T08:01:57.576Z"
     },
     {
       "expense_id": 102,
@@ -82,7 +82,7 @@
       "description": "Supermarket vegetables and rice",
       "isDeleted": 0,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-07T12:14:32.085Z"
+      "updatedAt": "2026-10-19T08:01:57.576Z"
     },
     {
       "expense_id": 103,
@@ -94,7 +94,7 @@
       "description": "Gasoline for family vehicle",
       "isDeleted": 0,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-07T12:14:32.085Z"
+      "updatedAt": "2026-10-19T08:01:57.576Z"
     },
     {
       "expense_id": 104,
@@ -106,7 +106,7 @@
       "description": "Cleaning supplies and toiletries",
       "isDeleted": 0,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-07T12:14:32.085Z"
+      "updatedAt": "2026-10-19T08:01:57.576Z"
     }
   ],
   "incomes": [
@@ -117,9 +117,10 @@
       "amount": 15000,
       "date": "2026-10-01T01:00:00.000Z",
       "description": "Primary monthly salary payout",
-      "isDeleted": 0,
+      "isDeleted": 1,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-07T12:14:32.085Z"
+      "deletedAt": "2026-10-06T05:03:46.940Z",
+      "updatedAt": "2026-10-19T08:01:57.576Z"
     },
     {
       "income_id": 202,
@@ -128,9 +129,10 @@
       "amount": 5000,
       "date": "2026-10-03T07:00:00.000Z",
       "description": "Online store earnings",
-      "isDeleted": 0,
+      "isDeleted": 1,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-07T12:14:32.085Z"
+      "deletedAt": "2026-10-06T05:03:45.888Z",
+      "updatedAt": "2026-10-19T08:01:57.576Z"
     }
   ],
   "budgets": [
@@ -190,13 +192,443 @@
       "owner_id": "client_1",
       "amount": 3000,
       "date": "2026-10-02T02:00:00.000Z",
-      "description": "Emergency fund allocation",
+      "description": "Emergency emergency fund allocation",
       "isDeleted": 0,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-07T12:14:32.085Z"
+      "updatedAt": "2026-10-19T08:01:57.576Z"
     }
   ],
   "auditLogs": [
+    {
+      "logId": "SRV-MUW7R9C0-739",
+      "action": "INCOME_DELETED",
+      "details": {
+        "income_id": 201
+      },
+      "timestamp": "2026-10-06T05:03:46.944Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW7R8IT-809",
+      "action": "INCOME_DELETED",
+      "details": {
+        "income_id": 202
+      },
+      "timestamp": "2026-10-06T05:03:45.893Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R5GA-548",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791261042262,
+        "categoryId": "dining",
+        "name": "Dining & Food",
+        "emoji": "🍽️",
+        "amount": 750,
+        "kind": "out",
+        "date": "2026-10-06T04:35:42.262Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:35:42.298Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R5G5-100",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260942262,
+        "categoryId": "transport",
+        "name": "Transportation Expenses",
+        "emoji": "🚌",
+        "amount": 620,
+        "kind": "out",
+        "date": "2026-10-06T04:35:42.262Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:35:42.293Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R5G0-777",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260842262,
+        "categoryId": "water",
+        "name": "Water Expenses",
+        "emoji": "💧",
+        "amount": 480,
+        "kind": "out",
+        "date": "2026-10-06T04:35:42.262Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:35:42.288Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R5FW-242",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260742262,
+        "categoryId": "electricity",
+        "name": "Electricity Expenses",
+        "emoji": "⚡",
+        "amount": 1850,
+        "kind": "out",
+        "date": "2026-10-06T04:35:42.262Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:35:42.284Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R5FS-921",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260642262,
+        "categoryId": "grocery",
+        "name": "Grocery Expenses",
+        "emoji": "🛒",
+        "amount": 2450,
+        "kind": "out",
+        "date": "2026-10-06T04:35:42.262Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:35:42.280Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R5FQ-792",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260542262,
+        "categoryId": "salary",
+        "name": "Monthly Salary",
+        "emoji": "💼",
+        "amount": 28500,
+        "kind": "in",
+        "date": "2026-10-06T04:35:42.262Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:35:42.278Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R3LB-76",
+      "action": "TRANSACTION_DELETED_BY_CLIENT",
+      "details": {
+        "id": 1790653534239,
+        "emoji": "⚡",
+        "name": "Electricity Expenses",
+        "amount": 39,
+        "kind": "out",
+        "date": "2026-09-29T03:45:34.239Z",
+        "isDeleted": 1,
+        "syncStatus": "pending",
+        "deletedAt": "2026-10-06T04:35:39.886Z"
+      },
+      "timestamp": "2026-10-06T04:35:39.887Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R3AT-905",
+      "action": "TRANSACTION_DELETED_BY_CLIENT",
+      "details": {
+        "id": 1790653540375,
+        "emoji": "💵",
+        "name": "Income",
+        "amount": 9000,
+        "kind": "in",
+        "date": "2026-09-29T03:45:40.375Z",
+        "isDeleted": 1,
+        "syncStatus": "pending",
+        "deletedAt": "2026-10-06T04:35:39.508Z"
+      },
+      "timestamp": "2026-10-06T04:35:39.509Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R2WX-12",
+      "action": "TRANSACTION_DELETED_BY_CLIENT",
+      "details": {
+        "id": 1791260447902,
+        "categoryId": "salary",
+        "name": "Monthly Salary",
+        "emoji": "💼",
+        "amount": 28500,
+        "kind": "in",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 1,
+        "syncStatus": "pending",
+        "deletedAt": "2026-10-06T04:35:39.008Z"
+      },
+      "timestamp": "2026-10-06T04:35:39.009Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R2H5-288",
+      "action": "TRANSACTION_DELETED_BY_CLIENT",
+      "details": {
+        "id": 1791260547902,
+        "categoryId": "grocery",
+        "name": "Grocery Expenses",
+        "emoji": "🛒",
+        "amount": 2450,
+        "kind": "out",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 1,
+        "syncStatus": "pending",
+        "deletedAt": "2026-10-06T04:35:38.440Z"
+      },
+      "timestamp": "2026-10-06T04:35:38.441Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R1QR-715",
+      "action": "TRANSACTION_DELETED_BY_CLIENT",
+      "details": {
+        "id": 1791260647902,
+        "categoryId": "electricity",
+        "name": "Electricity Expenses",
+        "emoji": "⚡",
+        "amount": 1850,
+        "kind": "out",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 1,
+        "syncStatus": "pending",
+        "deletedAt": "2026-10-06T04:35:37.490Z"
+      },
+      "timestamp": "2026-10-06T04:35:37.491Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R1MM-74",
+      "action": "TRANSACTION_DELETED_BY_CLIENT",
+      "details": {
+        "id": 1791260847902,
+        "categoryId": "transport",
+        "name": "Transportation Expenses",
+        "emoji": "🚌",
+        "amount": 620,
+        "kind": "out",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 1,
+        "syncStatus": "pending",
+        "deletedAt": "2026-10-06T04:35:37.340Z"
+      },
+      "timestamp": "2026-10-06T04:35:37.342Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R1HH-32",
+      "action": "TRANSACTION_DELETED_BY_CLIENT",
+      "details": {
+        "id": 1791260947902,
+        "categoryId": "dining",
+        "name": "Dining & Food",
+        "emoji": "🍽️",
+        "amount": 750,
+        "kind": "out",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 1,
+        "syncStatus": "pending",
+        "deletedAt": "2026-10-06T04:35:37.156Z"
+      },
+      "timestamp": "2026-10-06T04:35:37.157Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6R12N-78",
+      "action": "TRANSACTION_DELETED_BY_CLIENT",
+      "details": {
+        "id": 1791260747902,
+        "categoryId": "water",
+        "name": "Water Expenses",
+        "emoji": "💧",
+        "amount": 480,
+        "kind": "out",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 1,
+        "syncStatus": "pending",
+        "deletedAt": "2026-10-06T04:35:36.621Z"
+      },
+      "timestamp": "2026-10-06T04:35:36.623Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6P4MU-642",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260947902,
+        "categoryId": "dining",
+        "name": "Dining & Food",
+        "emoji": "🍽️",
+        "amount": 750,
+        "kind": "out",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:34:07.926Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6P4MO-767",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260847902,
+        "categoryId": "transport",
+        "name": "Transportation Expenses",
+        "emoji": "🚌",
+        "amount": 620,
+        "kind": "out",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:34:07.920Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6P4ML-97",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260747902,
+        "categoryId": "water",
+        "name": "Water Expenses",
+        "emoji": "💧",
+        "amount": 480,
+        "kind": "out",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:34:07.917Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6P4MF-859",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260647902,
+        "categoryId": "electricity",
+        "name": "Electricity Expenses",
+        "emoji": "⚡",
+        "amount": 1850,
+        "kind": "out",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:34:07.911Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6P4MC-312",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260547902,
+        "categoryId": "grocery",
+        "name": "Grocery Expenses",
+        "emoji": "🛒",
+        "amount": 2450,
+        "kind": "out",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:34:07.908Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUW6P4M9-160",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1791260447902,
+        "categoryId": "salary",
+        "name": "Monthly Salary",
+        "emoji": "💼",
+        "amount": 28500,
+        "kind": "in",
+        "date": "2026-10-06T04:34:07.902Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-10-06T04:34:07.905Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUM4VUI0-748",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1790653540375,
+        "emoji": "💵",
+        "name": "Income",
+        "amount": 9000,
+        "kind": "in",
+        "date": "2026-09-29T03:45:40.375Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-09-29T03:45:40.392Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUM4VPRH-780",
+      "action": "TRANSACTION_CREATED",
+      "details": {
+        "id": 1790653534239,
+        "emoji": "⚡",
+        "name": "Electricity Expenses",
+        "amount": 39,
+        "kind": "out",
+        "date": "2026-09-29T03:45:34.239Z",
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-09-29T03:45:34.253Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUM4VMLH-756",
+      "action": "TRANSACTION_DELETED_BY_CLIENT",
+      "details": {
+        "id": 1787198183540,
+        "emoji": "🛒",
+        "name": "Grocery Expenses",
+        "amount": 9000,
+        "kind": "out",
+        "date": "2026-08-20T03:56:23.540Z",
+        "deletedAt": "2026-09-29T03:45:30.148Z",
+        "isDeleted": 1,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-09-29T03:45:30.149Z",
+      "syncStatus": "synced"
+    },
+    {
+      "logId": "SRV-MUM4VKJH-542",
+      "action": "TRANSACTION_RESTORED_BY_CLIENT",
+      "details": {
+        "id": 1787198183540,
+        "emoji": "🛒",
+        "name": "Grocery Expenses",
+        "amount": 9000,
+        "kind": "out",
+        "date": "2026-08-20T03:56:23.540Z",
+        "deletedAt": null,
+        "isDeleted": 0,
+        "syncStatus": "pending"
+      },
+      "timestamp": "2026-09-29T03:45:27.485Z",
+      "syncStatus": "synced"
+    },
     {
       "logId": "SRV-INIT-001",
       "action": "SYSTEM_INITIALIZED",
@@ -209,7 +641,7 @@
   ],
   "metadata": {
     "version": "2.0.0",
-    "lastUpdated": "2026-10-07T12:14:32.085Z",
+    "lastUpdated": "2026-10-19T08:01:57.576Z",
     "currencySymbol": "₱"
   }
 }

@@ -238,8 +238,7 @@ export default function PersonalBudgetTrackerWebApp() {
             setServerLogs(logs);
             setCurrency(curr || "₱");
 
-            // Deferred — AI analysis runs non-blocking so UI shows immediately
-            setTimeout(() => runAiAnalysis(exp, inc, sav, bud), 0);
+            // Data successfully loaded from Dexie
         } catch (err) {
             console.error("Dexie database load error:", err);
         }
@@ -664,23 +663,6 @@ export default function PersonalBudgetTrackerWebApp() {
                                 <span className="hidden lg:inline">Rates</span>
                             </button>
 
-                            {/* AI Advisor Trigger */}
-                            <button
-                                onClick={() => {
-                                    runAiAnalysis();
-                                    setShowAiAdvisorModal(true);
-                                }}
-                                className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold text-xs flex items-center gap-1 shadow-xs hover:shadow-md active:scale-95 transition"
-                                title="AI Financial Advisor & Insights"
-                            >
-                                <span>✨</span>
-                                <span className="hidden md:inline">AI Advisor</span>
-                                {aiAnalysis && (
-                                    <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/20 text-[10px]">
-                                        {aiAnalysis.score}
-                                    </span>
-                                )}
-                            </button>
 
                             {/* Sync Status Badge */}
                             <button
@@ -784,87 +766,39 @@ export default function PersonalBudgetTrackerWebApp() {
                 ===================================================================== */}
                 {activeTab === "home" && (
                     <div className="space-y-6 animate-fade-in">
-                        {/* AI Financial Health & Live Exchange Rates Banner */}
-                        <div className="rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 shadow-xl border border-indigo-900/50 relative overflow-hidden">
-                            {/* Decorative background glow */}
-                            <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-                            <div className="absolute bottom-0 left-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-
-                            <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                                {/* Left: AI Health Score & Diagnosis */}
-                                <div className="space-y-2 flex-1">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-500/30 text-indigo-300 border border-indigo-400/30 flex items-center gap-1.5">
-                                            <span>✨ AI Financial Advisor</span>
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                        </span>
-                                        {aiAnalysis && (
-                                            <span
-                                                className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border"
-                                                style={{
-                                                    backgroundColor: `${aiAnalysis.ratingColor}20`,
-                                                    color: aiAnalysis.ratingColor,
-                                                    borderColor: `${aiAnalysis.ratingColor}40`,
-                                                }}
-                                            >
-                                                Score: {aiAnalysis.score}/100 • {aiAnalysis.rating}
-                                            </span>
-                                        )}
-                                        <span className="text-[11px] text-slate-400">
-                                            50/30/20 Rule: Needs {aiAnalysis?.rule50_30_20?.needs?.actualPct || 0}% • Wants {aiAnalysis?.rule50_30_20?.wants?.actualPct || 0}% • Savings {aiAnalysis?.rule50_30_20?.savings?.actualPct || 0}%
-                                        </span>
-                                    </div>
-
-                                    <div className="text-sm font-semibold text-slate-200">
-                                        {aiAnalysis?.insights?.[0]?.description || "Tracking daily burn rate and monthly budget health across all 7 categories."}
-                                    </div>
-
-                                    <div className="flex items-center gap-3 pt-1">
-                                        <button
+                        {/* Live Exchange Rates Widget */}
+                        <div className="rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 sm:p-5 shadow-xl border border-indigo-900/50 relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-lg shrink-0">
+                                    💱
+                                </div>
+                                <div>
+                                    <div className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Live Forex Rates</div>
+                                    <div className="text-sm font-semibold text-slate-200">Real-time exchange rates vs Philippine Peso (PHP)</div>
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex items-center gap-2">
+                                    {ratesData?.popularCurrencies?.slice(0, 3).map((curr) => (
+                                        <div
+                                            key={curr.code}
                                             onClick={() => {
-                                                runAiAnalysis();
-                                                setShowAiAdvisorModal(true);
+                                                setConverterFrom(curr.code);
+                                                setShowRatesModal(true);
                                             }}
-                                            className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-500/30 active:scale-95 transition flex items-center gap-1.5"
+                                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition text-center"
                                         >
-                                            <span>View Full AI Health Report</span>
-                                            <span>→</span>
-                                        </button>
-                                        <div className="text-xs text-slate-400 hidden sm:inline">
-                                            Daily Burn Rate: <strong className="text-white">₱{aiAnalysis?.summary?.dailyBurnRate || 0}/day</strong>
+                                            <div className="text-[10px] text-slate-400 font-bold">{curr.flag} {curr.code}</div>
+                                            <div className="text-xs font-extrabold text-white mt-0.5">₱{curr.rateToPhp}</div>
                                         </div>
-                                    </div>
+                                    ))}
                                 </div>
-
-                                {/* Right: Live Forex Rates Bar */}
-                                <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-3 sm:p-4 min-w-[280px]">
-                                    <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-white/10">
-                                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
-                                            <span>💱 Live Forex (vs PHP)</span>
-                                        </div>
-                                        <button
-                                            onClick={() => setShowRatesModal(true)}
-                                            className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 hover:underline"
-                                        >
-                                            FX Converter →
-                                        </button>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2 text-center">
-                                        {ratesData?.popularCurrencies?.slice(0, 3).map((curr) => (
-                                            <div
-                                                key={curr.code}
-                                                onClick={() => {
-                                                    setConverterFrom(curr.code);
-                                                    setShowRatesModal(true);
-                                                }}
-                                                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer transition"
-                                            >
-                                                <div className="text-[10px] text-slate-400 font-bold">{curr.flag} {curr.code}</div>
-                                                <div className="text-xs font-extrabold text-white mt-0.5">₱{curr.rateToPhp}</div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                                <button
+                                    onClick={() => setShowRatesModal(true)}
+                                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md transition ml-1 whitespace-nowrap"
+                                >
+                                    FX Converter →
+                                </button>
                             </div>
                         </div>
 
