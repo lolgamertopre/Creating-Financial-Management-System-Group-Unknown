@@ -70,7 +70,7 @@
       "description": "Meralco electricity bill payment",
       "isDeleted": 0,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-19T08:01:57.576Z"
+      "updatedAt": "2026-10-24T08:51:03.944Z"
     },
     {
       "expense_id": 102,
@@ -82,7 +82,7 @@
       "description": "Supermarket vegetables and rice",
       "isDeleted": 0,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-19T08:01:57.576Z"
+      "updatedAt": "2026-10-24T08:51:03.944Z"
     },
     {
       "expense_id": 103,
@@ -94,7 +94,7 @@
       "description": "Gasoline for family vehicle",
       "isDeleted": 0,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-19T08:01:57.576Z"
+      "updatedAt": "2026-10-24T08:51:03.944Z"
     },
     {
       "expense_id": 104,
@@ -106,7 +106,7 @@
       "description": "Cleaning supplies and toiletries",
       "isDeleted": 0,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-19T08:01:57.576Z"
+      "updatedAt": "2026-10-24T08:51:03.944Z"
     }
   ],
   "incomes": [
@@ -120,7 +120,7 @@
       "isDeleted": 1,
       "syncStatus": "synced",
       "deletedAt": "2026-10-06T05:03:46.940Z",
-      "updatedAt": "2026-10-19T08:01:57.576Z"
+      "updatedAt": "2026-10-24T08:51:03.944Z"
     },
     {
       "income_id": 202,
@@ -132,7 +132,7 @@
       "isDeleted": 1,
       "syncStatus": "synced",
       "deletedAt": "2026-10-06T05:03:45.888Z",
-      "updatedAt": "2026-10-19T08:01:57.576Z"
+      "updatedAt": "2026-10-24T08:51:03.944Z"
     }
   ],
   "budgets": [
@@ -195,7 +195,7 @@
       "description": "Emergency emergency fund allocation",
       "isDeleted": 0,
       "syncStatus": "synced",
-      "updatedAt": "2026-10-19T08:01:57.576Z"
+      "updatedAt": "2026-10-24T08:51:03.944Z"
     }
   ],
   "auditLogs": [
@@ -641,7 +641,7 @@
   ],
   "metadata": {
     "version": "2.0.0",
-    "lastUpdated": "2026-10-19T08:01:57.576Z",
+    "lastUpdated": "2026-10-24T08:51:03.944Z",
     "currencySymbol": "₱"
   }
 }
