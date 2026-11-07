@@ -1,7 +1,7 @@
 {
-  "name": "Web-Based Personal Budget Tracker",
+  "name": "Web-Based Personal Budget Tracker - Sherwin Banquil",
   "short_name": "BudgetTracker",
-  "description": "Web-Based Personal Budget Tracker - Income, Expense, Budget, and Savings Management.",
+  "description": "Web-Based Personal Budget Tracker created by Sherwin Banquil. Income, Expense, Budget, and Savings Management.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F0F2F8",

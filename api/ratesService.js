@@ -125,3 +125,9 @@ export function convertCurrency(amount, fromCurrency, toCurrency, ratesData) {
     const inBase = val / fromRate;
     return Number((inBase * toRate).toFixed(2));
 }
+
+export default function handler(req, res) {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ status: 'ok', service: 'ratesService' }));
+}

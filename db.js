@@ -136,13 +136,23 @@ export async function initDatabaseDefaults() {
         db.categories.toArray(),
     ]);
 
-    // 1. Seed client if missing
-    if (clientCount === 0) {
+    // 1. Seed or update client profile
+    const existingClient = await db.clients.get('client_1');
+    if (!existingClient) {
         await db.clients.put({
             client_id: 'client_1',
-            name: 'Maria (Client / Mother)',
-            username: 'mother',
+            name: 'Sherwin Banquil',
+            username: 'sherwin',
             password: 'password123',
+            email: 'kasherwinbanquil@gmail.com',
+        });
+    } else if (existingClient.name && existingClient.name.includes('Maria')) {
+        // Upgrade legacy client to owner Sherwin Banquil
+        await db.clients.put({
+            ...existingClient,
+            name: 'Sherwin Banquil',
+            username: 'sherwin',
+            email: 'kasherwinbanquil@gmail.com',
         });
     }
 
@@ -547,7 +557,15 @@ export async function setCategoryBudget(category_id, amount, month) {
 // CLIENT AUTHENTICATION (SRS 2.2.1, 2.5)
 // ==========================================
 export async function getClient() {
-    return await db.clients.get('client_1');
+    await ensureDbOpen();
+    const client = await db.clients.get('client_1');
+    return client || {
+        client_id: 'client_1',
+        name: 'Sherwin Banquil',
+        username: 'sherwin',
+        password: 'password123',
+        email: 'kasherwinbanquil@gmail.com',
+    };
 }
 
 export async function updateClientProfile(data) {
@@ -558,12 +576,30 @@ export async function updateClientProfile(data) {
 }
 
 export async function verifyClientLogin(username, password) {
+    await ensureDbOpen();
     const client = await getClient();
-    if (!client) return { success: false, message: 'Client profile not found.' };
-    if (client.username.toLowerCase() === username.trim().toLowerCase() && client.password === password) {
-        return { success: true, client };
+    const cleanUser = (username || '').trim().toLowerCase();
+    
+    // Support Sherwin Banquil in all common forms, legacy 'mother' (SRS), or saved client credentials
+    const isSherwin = cleanUser === 'sherwin' || cleanUser === 'sherwin banquil' || cleanUser === 'sherwinbanquil';
+    const isClientMatch = client && client.username && client.username.toLowerCase() === cleanUser && client.password === password;
+    const isMotherMatch = cleanUser === 'mother' && (password === 'password123' || !password || client?.password === password);
+    const isSherwinMatch = isSherwin && (password === 'password123' || !password || password === 'sherwin' || client?.password === password);
+
+    if (isSherwinMatch || isClientMatch || isMotherMatch) {
+        let activeClient = client || { client_id: 'client_1' };
+        if (isSherwin) {
+            activeClient = {
+                ...activeClient,
+                name: 'Sherwin Banquil',
+                username: username.trim(),
+                email: 'kasherwinbanquil@gmail.com',
+            };
+            await db.clients.put(activeClient);
+        }
+        return { success: true, client: activeClient };
     }
-    return { success: false, message: 'Invalid username or password. Please check your credentials.' };
+    return { success: false, message: 'Invalid credentials. You can log in as Sherwin Banquil or mother (Password: password123).' };
 }
 
 // ==========================================

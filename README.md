@@ -1,5 +1,9 @@
 # Web-Based Personal Budget Tracker
 
+**Developed by:** Sherwin Banquil ([@lolgamertopre](https://github.com/lolgamertopre))  
+**Email:** kasherwinbanquil@gmail.com  
+**Deployment Platform:** [Vercel](https://vercel.com)  
+
 An offline-first, modern responsive web application designed for personal financial management, expense tracking, budget monitoring, and savings management in compliance with the **Software Requirements Specification (SRS)**.
 
 ---

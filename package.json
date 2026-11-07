@@ -1,7 +1,8 @@
 {
   "name": "financial-management-system",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "author": "Sherwin Banquil <kasherwinbanquil@gmail.com>",
   "type": "module",
   "scripts": {
     "dev": "vite",

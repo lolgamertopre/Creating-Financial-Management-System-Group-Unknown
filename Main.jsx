@@ -62,7 +62,7 @@ export default function PersonalBudgetTrackerWebApp() {
     // Client Profile & Auth (SRS 2.2.1 & ERD Client Table)
     const [client, setClient] = useState(null);
     const [isLoggedIn, setIsLoggedIn] = useState(true);
-    const [loginUsername, setLoginUsername] = useState("mother");
+    const [loginUsername, setLoginUsername] = useState("sherwin");
     const [loginPassword, setLoginPassword] = useState("password123");
     const [loginError, setLoginError] = useState("");
     const [showLoginModal, setShowLoginModal] = useState(false);
@@ -612,7 +612,7 @@ export default function PersonalBudgetTrackerWebApp() {
                                     </span>
                                 </div>
                                 <div className="text-[11px] font-medium text-slate-400">
-                                    Client: <strong className="text-slate-700">{client ? client.name : "Maria (Mother)"}</strong>
+                                    Client: <strong className="text-slate-700">{client ? client.name : "Sherwin Banquil"}</strong>
                                 </div>
                             </div>
                         </div>
@@ -1789,11 +1789,11 @@ export default function PersonalBudgetTrackerWebApp() {
                             <div className="space-y-3 text-xs">
                                 <div className="flex justify-between py-2 border-b border-slate-100">
                                     <span className="text-slate-400">Client Name</span>
-                                    <span className="font-bold text-slate-800">{client?.name || "Maria (Mother)"}</span>
+                                    <span className="font-bold text-slate-800">{client?.name || "Sherwin Banquil"}</span>
                                 </div>
                                 <div className="flex justify-between py-2 border-b border-slate-100">
                                     <span className="text-slate-400">Login Username</span>
-                                    <span className="font-bold text-slate-800">{client?.username || "mother"}</span>
+                                    <span className="font-bold text-slate-800">{client?.username || "sherwin"}</span>
                                 </div>
                                 <div className="flex justify-between py-2">
                                     <span className="text-slate-400">Security Password</span>
@@ -1951,6 +1951,16 @@ export default function PersonalBudgetTrackerWebApp() {
                         </div>
                     </div>
                 )}
+
+                {/* Developer Attribution Footer */}
+                <div className="mt-12 text-center text-xs text-slate-400 py-6 border-t border-slate-200/60 pb-20 md:pb-6">
+                    <div className="font-semibold text-slate-600">
+                        Personal Budget Tracker
+                    </div>
+                    <div className="mt-1">
+                        Developed by <span className="font-bold text-indigo-600">Sherwin Banquil</span> · Web-Based Financial Management System
+                    </div>
+                </div>
             </main>
 
             {/* =========================================================================
@@ -2608,7 +2618,11 @@ export default function PersonalBudgetTrackerWebApp() {
                             </div>
                         )}
 
-                        <form onSubmit={handleLoginSubmit} className="mt-4 space-y-3">
+                        <div className="mt-3 p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[11px] text-slate-500">
+                            Authorized Account: <strong className="text-slate-800">Sherwin Banquil</strong> (Username: <code className="text-indigo-600 font-bold">sherwin</code> or <code className="text-indigo-600 font-bold">mother</code>) · Password: <code className="text-indigo-600 font-bold">password123</code>
+                        </div>
+
+                        <form onSubmit={handleLoginSubmit} className="mt-3 space-y-3">
                             <div>
                                 <label className="text-xs font-bold text-slate-700 block mb-1">
                                     Username

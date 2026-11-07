@@ -408,3 +408,9 @@ export function smartCategorize(inputText) {
         aiExplanation: `Identified as ${type.toUpperCase()} under ${category_id.toUpperCase()} (Confidence: ${(confidence * 100).toFixed(0)}%).`,
     };
 }
+
+export default function handler(req, res) {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ status: 'ok', service: 'aiService' }));
+}

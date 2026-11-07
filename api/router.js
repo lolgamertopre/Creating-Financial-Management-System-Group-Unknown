@@ -32,8 +32,12 @@ function sendJson(res, statusCode, data) {
 }
 
 export async function handleApiRequest(req, res) {
-    const url = new URL(req.url, `http://${req.headers.host || 'localhost:5173'}`);
-    const pathname = url.pathname;
+    const rawUrl = req.headers['x-matched-path'] || req.url || '/api/health';
+    const url = new URL(rawUrl, `http://${req.headers.host || 'localhost:5173'}`);
+    let pathname = url.pathname;
+    if (pathname === '/api' || pathname === '/api/') {
+        pathname = '/api/health';
+    }
     const method = req.method.toUpperCase();
 
     // Handle preflight CORS
@@ -302,4 +306,8 @@ export async function handleApiRequest(req, res) {
         sendJson(res, 500, { error: 'Internal Server Error', message: err.message });
         return true;
     }
+}
+
+export default async function handler(req, res) {
+    return handleApiRequest(req, res);
 }
