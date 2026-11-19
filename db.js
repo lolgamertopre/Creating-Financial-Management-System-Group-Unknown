@@ -194,22 +194,24 @@ export async function initDatabaseDefaults() {
             {
                 expense_id: 101,
                 client_id: 'client_1',
-                category_id: 'bills',
-                name: 'Electric bill',
-                amount: 2450,
-                date: new Date(year, month, 4, 14, 30).toISOString(),
-                description: 'Meralco electricity bill payment',
+                category_id: 'food',
+                name: 'gigutom ko',
+                amount: 90,
+                date: new Date(year, month, 13, 14, 30).toISOString(),
+                description: 'Snacks and merienda',
+                status: 'Completed',
                 isDeleted: 0,
                 syncStatus: 'synced',
             },
             {
                 expense_id: 102,
                 client_id: 'client_1',
-                category_id: 'food',
-                name: 'Weekly groceries',
-                amount: 860,
-                date: new Date(year, month, 3, 11, 15).toISOString(),
-                description: 'Supermarket vegetables and rice',
+                category_id: 'shopping',
+                name: 'grocery',
+                amount: 500,
+                date: new Date(year, month, 13, 11, 15).toISOString(),
+                description: 'Supermarket essentials',
+                status: 'Completed',
                 isDeleted: 0,
                 syncStatus: 'synced',
             },
@@ -217,21 +219,59 @@ export async function initDatabaseDefaults() {
                 expense_id: 103,
                 client_id: 'client_1',
                 category_id: 'transport',
-                name: 'Fuel',
-                amount: 320,
-                date: new Date(year, month, 2, 8, 45).toISOString(),
-                description: 'Gasoline for family vehicle',
+                name: 'patfit',
+                amount: 30,
+                date: new Date(year, month, 13, 8, 45).toISOString(),
+                description: 'Commute and jeepney fare',
+                status: 'Completed',
                 isDeleted: 0,
                 syncStatus: 'synced',
             },
             {
                 expense_id: 104,
                 client_id: 'client_1',
-                category_id: 'shopping',
-                name: 'Household items',
-                amount: 550,
-                date: new Date(year, month, 1, 16, 20).toISOString(),
-                description: 'Cleaning supplies and toiletries',
+                category_id: 'food',
+                name: 'humba',
+                amount: 50,
+                date: new Date(year, month, 13, 12, 20).toISOString(),
+                description: 'Lunch viand',
+                status: 'Completed',
+                isDeleted: 0,
+                syncStatus: 'synced',
+            },
+            {
+                expense_id: 105,
+                client_id: 'client_1',
+                category_id: 'bills',
+                name: 'Electric bill',
+                amount: 2450,
+                date: new Date(year, month, 4, 10, 0).toISOString(),
+                description: 'Meralco electricity bill payment',
+                status: 'Completed',
+                isDeleted: 0,
+                syncStatus: 'synced',
+            },
+            {
+                expense_id: 106,
+                client_id: 'client_1',
+                category_id: 'food',
+                name: 'Weekly groceries',
+                amount: 860,
+                date: new Date(year, month, 8, 16, 0).toISOString(),
+                description: 'Vegetables, rice, and meat',
+                status: 'Completed',
+                isDeleted: 0,
+                syncStatus: 'synced',
+            },
+            {
+                expense_id: 107,
+                client_id: 'client_1',
+                category_id: 'transport',
+                name: 'Fuel',
+                amount: 320,
+                date: new Date(year, month, 10, 9, 30).toISOString(),
+                description: 'Gasoline for family vehicle',
+                status: 'Completed',
                 isDeleted: 0,
                 syncStatus: 'synced',
             },
@@ -257,6 +297,7 @@ export async function initDatabaseDefaults() {
                 amount: 15000,
                 date: new Date(year, month, 1, 9, 0).toISOString(),
                 description: 'Primary monthly salary payout',
+                status: 'Completed',
                 isDeleted: 0,
                 syncStatus: 'synced',
             },
@@ -267,6 +308,18 @@ export async function initDatabaseDefaults() {
                 amount: 5000,
                 date: new Date(year, month, 3, 15, 0).toISOString(),
                 description: 'Online store earnings',
+                status: 'Completed',
+                isDeleted: 0,
+                syncStatus: 'synced',
+            },
+            {
+                income_id: 203,
+                client_id: 'client_1',
+                source: 'Allowance',
+                amount: 4500,
+                date: new Date(year, month, 7, 10, 0).toISOString(),
+                description: 'Monthly allowance',
+                status: 'Completed',
                 isDeleted: 0,
                 syncStatus: 'synced',
             },
@@ -279,6 +332,7 @@ export async function initDatabaseDefaults() {
             amount: inc.amount,
             date: inc.date,
             description: inc.description,
+            status: inc.status,
             isDeleted: 0,
             syncStatus: 'synced',
         }));
@@ -294,9 +348,9 @@ export async function initDatabaseDefaults() {
             await db.savings.put({
                 savings_id: 301,
                 owner_id: 'client_1',
-                amount: 3000,
+                amount: 3200,
                 date: new Date(year, month, 2, 10, 0).toISOString(),
-                description: 'Emergency emergency fund allocation',
+                description: 'Personal savings goal progress',
                 isDeleted: 0,
                 syncStatus: 'synced',
             });
@@ -323,6 +377,7 @@ export async function addExpense(entry) {
         amount: Number(entry.amount) || 0,
         date: entry.date || new Date().toISOString(),
         description: entry.description || '',
+        status: entry.status || 'Completed',
         isDeleted: 0,
         syncStatus: 'pending',
     };
@@ -336,6 +391,7 @@ export async function addExpense(entry) {
         categoryId: expense.category_id,
         date: expense.date,
         description: expense.description,
+        status: expense.status,
         isDeleted: 0,
         syncStatus: 'pending',
     });
@@ -404,6 +460,7 @@ export async function addIncome(entry) {
         amount: Number(entry.amount) || 0,
         date: entry.date || new Date().toISOString(),
         description: entry.description || '',
+        status: entry.status || 'Completed',
         isDeleted: 0,
         syncStatus: 'pending',
     };
@@ -415,6 +472,7 @@ export async function addIncome(entry) {
         amount: income.amount,
         date: income.date,
         description: income.description,
+        status: income.status,
         isDeleted: 0,
         syncStatus: 'pending',
     });
@@ -600,6 +658,18 @@ export async function verifyClientLogin(username, password) {
         return { success: true, client: activeClient };
     }
     return { success: false, message: 'Invalid credentials. You can log in as Sherwin Banquil or mother (Password: password123).' };
+}
+
+export async function resetClientPassword(username, newPassword) {
+    await ensureDbOpen();
+    const client = await getClient();
+    const updated = {
+        ...(client || { client_id: 'client_1', name: 'Sherwin Banquil' }),
+        username: (username || '').trim() || 'sherwin',
+        password: newPassword,
+    };
+    await db.clients.put(updated);
+    return { success: true, client: updated };
 }
 
 // ==========================================
