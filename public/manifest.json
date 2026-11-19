@@ -1,12 +1,26 @@
 {
-  "name": "Web-Based Personal Budget Tracker - Sherwin Banquil",
-  "short_name": "BudgetTracker",
-  "description": "Web-Based Personal Budget Tracker created by Sherwin Banquil. Income, Expense, Budget, and Savings Management.",
+  "name": "Pocketwise - Personal Budget Tracker",
+  "short_name": "Pocketwise",
+  "description": "Pocketwise - Offline-first Personal Budget & Expense Management Web App by Sherwin Banquil.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#F0F2F8",
-  "theme_color": "#4F46E5",
+  "orientation": "portrait",
+  "background_color": "#F6F8FC",
+  "theme_color": "#6366F1",
   "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "/icon-192.svg",
       "sizes": "192x192",

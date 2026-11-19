@@ -51,6 +51,41 @@ export default function PocketwiseApp() {
     const [authView, setAuthView] = useState("login"); // 'login' | 'reset'
     const [activeTab, setActiveTab] = useState("home"); // 'home' | 'income' | 'expenses' | 'reports' | 'settings'
 
+    // PWA Install Prompt State
+    const [deferredPrompt, setDeferredPrompt] = useState(null);
+    const [isAppInstalled, setIsAppInstalled] = useState(false);
+
+    useEffect(() => {
+        const handleBeforeInstall = (e) => {
+            e.preventDefault();
+            setDeferredPrompt(e);
+        };
+        window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+
+        if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true) {
+            setIsAppInstalled(true);
+        }
+
+        return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+    }, []);
+
+    const triggerInstall = async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            if (outcome === "accepted") {
+                setDeferredPrompt(null);
+                setIsAppInstalled(true);
+            }
+        } else {
+            alert(
+                "To install Pocketwise as an App on your phone:\n\n" +
+                "• iPhone / iPad (Safari):\nTap the Share button (⎋) at the bottom, then scroll down and tap 'Add to Home Screen' (+).\n\n" +
+                "• Android (Chrome / Edge):\nTap the three dots (⋮) in the top-right corner, then tap 'Install app' or 'Add to Home screen'."
+            );
+        }
+    };
+
     // Data lists
     const [expensesList, setExpensesList] = useState([]);
     const [incomesList, setIncomesList] = useState([]);
@@ -595,8 +630,20 @@ export default function PocketwiseApp() {
                         </div>
                     </div>
 
-                    {/* Right: Notification Bell & Logout */}
+                    {/* Right: Install, Notification Bell & Logout */}
                     <div className="flex items-center gap-2">
+                        {!isAppInstalled && (
+                            <button
+                                type="button"
+                                onClick={triggerInstall}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-[#6366F1] font-extrabold text-[11px] active:scale-95 transition"
+                                title="Install Pocketwise as a Web App"
+                            >
+                                <span>📲</span>
+                                <span>Install</span>
+                            </button>
+                        )}
+
                         <button
                             type="button"
                             onClick={() => setShowNotifications(true)}
@@ -1233,6 +1280,31 @@ export default function PocketwiseApp() {
                                     );
                                 })}
                             </div>
+                        </div>
+
+                        {/* Install Web App Card */}
+                        <div className="bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-slate-50 rounded-3xl p-5 border border-indigo-100 shadow-xs">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-[#6366F1] text-white flex items-center justify-center text-lg font-bold shadow-md shadow-indigo-500/20">
+                                    📲
+                                </div>
+                                <div>
+                                    <div className="text-xs font-black text-slate-900">Install Pocketwise App</div>
+                                    <div className="text-[11px] text-slate-500">Add to Home Screen for offline access</div>
+                                </div>
+                            </div>
+
+                            <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+                                Install Pocketwise as a standalone app on your mobile or desktop device to enjoy full-screen experience and fast access directly from your home screen.
+                            </p>
+
+                            <button
+                                type="button"
+                                onClick={triggerInstall}
+                                className="mt-3.5 w-full py-3 bg-[#6366F1] hover:bg-[#4F46E5] text-white font-extrabold text-xs rounded-2xl shadow-md shadow-indigo-500/25 active:scale-98 transition flex items-center justify-center gap-2"
+                            >
+                                <span>📲</span> {isAppInstalled ? "✓ App Installed on Device" : "Install App to Home Screen"}
+                            </button>
                         </div>
 
                         {/* Demo Data Reset Button */}
