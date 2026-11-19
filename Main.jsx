@@ -47,7 +47,7 @@ export default function PocketwiseApp() {
     // Core State
     // -------------------------------------------------------------
     const [client, setClient] = useState(null);
-    const [isLoggedIn, setIsLoggedIn] = useState(true);
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [authView, setAuthView] = useState("login"); // 'login' | 'reset'
     const [activeTab, setActiveTab] = useState("home"); // 'home' | 'income' | 'expenses' | 'reports' | 'settings'
 
@@ -118,13 +118,13 @@ export default function PocketwiseApp() {
     const [formError, setFormError] = useState("");
 
     // Auth Form State
-    const [loginUsername, setLoginUsername] = useState("canillasjohnlouie2007@gmail.com");
-    const [loginPassword, setLoginPassword] = useState("password123");
+    const [loginUsername, setLoginUsername] = useState("");
+    const [loginPassword, setLoginPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [loginError, setLoginError] = useState("");
 
     // Reset Password Form State
-    const [resetUser, setResetUser] = useState("lowigwapo");
+    const [resetUser, setResetUser] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [resetMessage, setResetMessage] = useState("");
@@ -557,6 +557,7 @@ export default function PocketwiseApp() {
                             <label className="text-xs font-bold text-slate-700 block mb-1">Username</label>
                             <input
                                 type="text"
+                                placeholder="Enter your username"
                                 value={loginUsername}
                                 onChange={(e) => setLoginUsername(e.target.value)}
                                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -569,6 +570,7 @@ export default function PocketwiseApp() {
                             <div className="relative">
                                 <input
                                     type={showPassword ? "text" : "password"}
+                                    placeholder="Enter your password"
                                     value={loginPassword}
                                     onChange={(e) => setLoginPassword(e.target.value)}
                                     className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -591,16 +593,19 @@ export default function PocketwiseApp() {
                             Login
                         </button>
 
-                        <div className="flex items-center justify-between pt-2 text-xs">
+                        <div className="pt-2 text-center">
                             <button
                                 type="button"
                                 onClick={() => setAuthView("reset")}
-                                className="text-indigo-600 font-semibold hover:underline"
+                                className="text-xs text-indigo-600 font-semibold hover:underline"
                             >
                                 Forgot password?
                             </button>
-                            <span className="text-slate-400">Default: password123</span>
                         </div>
+                        <p className="text-center text-xs text-slate-400 mt-3">
+                            Don't have an account?{" "}
+                            <span className="text-indigo-600 font-semibold">Register here</span>
+                        </p>
                     </form>
                 </div>
             </div>
